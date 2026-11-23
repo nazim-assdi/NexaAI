@@ -20,9 +20,18 @@ Nexa can chat offline **after** Python dependencies and a model have been downlo
    ```powershell
    ollama pull qwen2.5:3b
    ```
-3. Extract the project source ZIP from this repository.
-4. Run `setup.bat` once to install Python packages.
-5. Keep Ollama running and double-click `run.bat`. You can then disconnect from the internet and use local chat.
+3. Clone the repository:
+   ```powershell
+   git clone https://github.com/nazim-assdi/NexaAI.git
+   cd NexaAI
+   ```
+4. Rebuild and extract the source archive:
+   ```powershell
+   .\restore-source.ps1
+   ```
+   The script verifies the archive SHA-256 before extracting it to `NexaAI-source`.
+5. Run `NexaAI-source\setup.bat` once to install Python packages.
+6. Keep Ollama running and double-click `NexaAI-source\run.bat`. You can then disconnect from the internet and use local chat.
 
 Default configuration: `NEXA_PROVIDER=local`, `http://127.0.0.1:11434/v1`, model `qwen2.5:3b`. For an 8 GB RAM computer, start with a small/quantized model. Model speed depends on CPU, RAM, quantization and context length.
 
@@ -64,10 +73,6 @@ Install optional dependencies with `pip install -r requirements-gemini.txt`, the
 - Local mode sends requests only to `NEXA_LOCAL_BASE_URL`.
 - Do not expose port 8000 publicly without authentication, rate limits and HTTPS.
 - The `.env` file is ignored by Git. Never commit API keys.
-
-## Full source
-
-Download `NexaAI-offline-source.zip` from the repository files. It contains the Python app, Windows launch/setup scripts, tests and GitHub Actions workflow. Extract the ZIP to a folder, then follow the Windows quick-start instructions above.
 
 ## Development checks
 
