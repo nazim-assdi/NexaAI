@@ -71,4 +71,6 @@ file_store = FileStore()
 
 def guess_mime_type(filename: str, supplied: str | None = None) -> str:
     guessed, _ = mimetypes.guess_type(filename)
-    return supplied or guessed or "application/octet-stream"
+    if supplied and supplied.lower() != "application/octet-stream":
+        return supplied
+    return guessed or supplied or "application/octet-stream"
