@@ -18,14 +18,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from nexa_ai.model_library import QWEN3_MODEL_KEY, QWEN3_MODEL_ID, QWEN3_MODEL_NAME, QWEN3_MODEL_FILENAME, model_is_installed, download_model
+from nexa_ai.model_library import QWEN3_MODEL_KEY, QWEN3_MODEL_ID, QWEN3_MODEL_NAME, QWEN3_MODEL_FILENAME, model_is_installed, download_model, verify_model_file
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -486,6 +486,25 @@ class NexaDesktop:
                 )
             if not self.active_model_path.is_file():
                 raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
+            model_sha = verify_model_file(QWEN3_MODEL_KEY, self.active_model_path)
+            self.log_handle.write(f"Qwen3 GGUF integrity verified: SHA-256 {model_sha}\n")
+            if self._port_is_occupied(LOCAL_MODEL_PORT):
+                raise RuntimeError(
+                    f"Local AI port {LOCAL_MODEL_PORT} is already in use. "
+                    "Close another NexaAI window or local llama-server, then restart."
+                )
+            runtime_probe = subprocess.run(
+                [str(exe), "--version"], cwd=str(self.runtime_dir),
+                capture_output=True, text=True, timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if runtime_probe.returncode != 0:
+                raise RuntimeError(
+                    "The bundled llama.cpp executable or one of its DLL dependencies failed to load. "
+                    f"Exit code: {runtime_probe.returncode}. "
+                    f"{(runtime_probe.stderr or runtime_probe.stdout).strip()[:1000]}"
+                )
+            self.log_handle.write(f"llama.cpp runtime: {(runtime_probe.stdout or runtime_probe.stderr).strip()}\n")
             available_ram = self._available_memory_gb()
             if available_ram is not None:
                 self.log_handle.write(f"Available physical RAM before model load: {available_ram:.2f} GB\\n")
@@ -512,7 +531,7 @@ class NexaDesktop:
                     stdout=self.log_handle, stderr=subprocess.STDOUT,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
-                if self._wait_for_model_server(300):
+                if self._wait_for_model_server(420):
                     server_ready = True
                     self.log_handle.write(f"llama-server ready using {profile['name']} profile.\\n")
                     break
@@ -549,6 +568,13 @@ class NexaDesktop:
             self.events.put(("ready", None))
         except Exception as exc:
             self.events.put(("boot_error", str(exc)))
+
+    @staticmethod
+    def _port_is_occupied(port: int) -> bool:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.4)
+            return probe.connect_ex(("127.0.0.1", port)) == 0
 
     @staticmethod
     def _available_memory_gb() -> float | None:

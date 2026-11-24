@@ -55,7 +55,13 @@ def model_is_installed(model_key: str, data_root: Path, bundled_model: Path | No
     if not item:
         return False
     model_path, _ = model_paths(model_key, data_root)
-    return model_path.is_file() and model_path.stat().st_size >= item["minimum_bytes"]
+    if not model_path.is_file() or model_path.stat().st_size < item["minimum_bytes"]:
+        return False
+    try:
+        with model_path.open("rb") as source:
+            return source.read(4) == b"GGUF"
+    except OSError:
+        return False
 
 
 def _parse_content_range(value: str | None) -> tuple[int, int, int] | None:
@@ -259,13 +265,37 @@ def _download_one(url: str, destination: Path, minimum_bytes: int, progress=None
         raise RuntimeError(f"Model SHA-256 verification failed: expected {expected_sha256}, got {actual}.")
 
 
+def verify_model_file(model_key: str, model_path: Path) -> str:
+    item = MODEL_CATALOG.get(model_key)
+    if not item:
+        raise KeyError(f"Unknown model: {model_key}")
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Model file is missing: {model_path}")
+    size = model_path.stat().st_size
+    if size < item["minimum_bytes"]:
+        raise RuntimeError(f"Qwen3 model file is truncated ({size:,} bytes; expected at least {item['minimum_bytes']:,}).")
+    with model_path.open("rb") as source:
+        if source.read(4) != b"GGUF":
+            raise RuntimeError("Qwen3 model file has an invalid GGUF header.")
+    actual = _hash_file(model_path)
+    expected = str(item["sha256"]).lower()
+    if actual != expected:
+        raise RuntimeError(f"Qwen3 model SHA-256 mismatch. Expected {expected}, got {actual}.")
+    return actual
+
+
 def download_model(model_key: str, data_root: Path, bundled_model: Path | None = None, progress=None) -> tuple[Path, None]:
     item = MODEL_CATALOG.get(model_key)
     if not item:
         raise KeyError(f"Unknown model: {model_key}")
     model_path, _ = model_paths(model_key, data_root)
-    if not model_is_installed(model_key, data_root):
-        _download_one(item["url"], model_path, item["minimum_bytes"], progress, item["name"], item.get("sha256"))
+    try:
+        verify_model_file(model_key, model_path)
+        return model_path, None
+    except (OSError, RuntimeError):
+        model_path.unlink(missing_ok=True)
+    _download_one(item["url"], model_path, item["minimum_bytes"], progress, item["name"], item.get("sha256"))
+    verify_model_file(model_key, model_path)
     return model_path, None
 
 

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
 from nexa_ai.local_backend import _parse_content, prepare_messages
-from nexa_ai.model_library import MODEL_CATALOG, _parse_content_range
+from nexa_ai.model_library import MODEL_CATALOG, _parse_content_range, model_is_installed, verify_model_file
 from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
@@ -39,6 +39,26 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(MODEL_CATALOG["qwen3-4b"]["id"], "nexa-qwen3-4b")
         self.assertEqual(MODEL_CATALOG["qwen3-4b"]["filename"], "Qwen3-4B-Q4_K_M.gguf")
 
+    def test_model_installed_requires_gguf_magic(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = root / "models" / "Qwen3-4B-Q4_K_M.gguf"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"BAD!" + b"x" * 2_300_000_000)
+            self.assertFalse(model_is_installed("qwen3-4b", root))
+            path.write_bytes(b"GGUF" + b"x" * 2_300_000_000)
+            self.assertTrue(model_is_installed("qwen3-4b", root))
+
+    def test_verify_model_file_rejects_bad_header_and_wrong_hash(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "bad.gguf"
+            path.write_bytes(b"BAD!" + b"x" * 2_300_000_000)
+            with self.assertRaisesRegex(RuntimeError, "GGUF header"):
+                verify_model_file("qwen3-4b", path)
+            path.write_bytes(b"GGUF" + b"x" * 2_300_000_000)
+            with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
+                verify_model_file("qwen3-4b", path)
+
     def test_model_downloader_parses_content_range(self):
         self.assertEqual(_parse_content_range("bytes 0-0/2500000000"), (0, 0, 2500000000))
         self.assertIsNone(_parse_content_range("bytes */2500000000"))
@@ -55,6 +75,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(command[command.index("--n-gpu-layers") + 1], "0")
         self.assertIn("--batch-size", command)
         self.assertIn("--offline", command)
+        self.assertEqual(command[command.index("--device") + 1], "none")
+        self.assertEqual(command[command.index("--fit") + 1], "off")
+        self.assertIn("--load-mode", command)
         self.assertNotIn("--jinja", command)
 
     def test_qwen3_is_recommended_and_checksum_pinned(self):

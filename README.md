@@ -1,11 +1,11 @@
-# Nexa AI — NTech Edition · One-Model Offline Desktop Assistant
+# Nexa AI — NTech Edition · Verified Qwen3 Offline Assistant
 
 Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.3.0-Windows-x64.exe\`.
+2. Download \`NexaAI-Setup-1.5.0-Windows-x64.exe\`.
 3. Install and launch Nexa AI.
 4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
 
@@ -23,7 +23,7 @@ The installer includes the desktop application and the llama.cpp Windows CPU run
 
 The app downloads and checks this exact file automatically at first start. It is the single model used for chat, coding, debugging, reasoning and n8n workflow generation. NexaAI does not offer model switching or optional alternative LLM downloads.
 
-The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It reduces batch sizes, disables GPU offload and records llama.cpp logs if startup fails. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
+The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It uses CPU-only inference, mmap loading and fewer threads on older processors. Each Windows release runs an end-to-end test with the exact Qwen3 GGUF, server health endpoint and local chat completion. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
 
 ## Chat and coding
 
@@ -65,7 +65,7 @@ Describe an automation in Bangla or English. The same Qwen3 model creates a work
 
 ## Supported attachments and limitations
 
-The one-model setup uses Qwen3 4B, a text-only model. It supports selectable-text PDFs and text/code documents. **Image/video understanding and scanned-PDF OCR are not included**, because they would require additional specialist models or OCR components. The app does not silently download another vision or coding LLM. Startup failures show recent llama.cpp log lines, process exit codes and available-RAM information.
+The one-model setup uses Qwen3 4B, a text-only model. It supports selectable-text PDFs and text/code documents. **Image/video understanding and scanned-PDF OCR are not included**, because they would require additional specialist models or OCR components. The app does not silently download another vision or coding LLM. Startup failures show recent llama.cpp log lines, process exit codes, available-RAM information, model checksum failures and port conflicts.
 
 ## Privacy and offline operation
 
