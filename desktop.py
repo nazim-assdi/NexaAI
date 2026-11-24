@@ -219,7 +219,7 @@ class NexaDesktop:
 
         self.chat = ScrolledText(
             main, wrap="word", bg=self.BG, fg=self.TEXT, insertbackground=self.TEXT,
-            selectbackground="#2e4f7a", relief="flat", borderwidth=0,
+            selectbackground=self.THEMES[self.theme_name]["SELECT"], relief="flat", borderwidth=0,
             font=("Segoe UI", 10), padx=26, pady=22, spacing1=2, spacing3=8,
             state="disabled",
         )
@@ -297,6 +297,7 @@ class NexaDesktop:
         self.chat.tag_configure("name_ai", foreground=new_palette["AI"])
         self.chat.tag_configure("body", foreground=self.TEXT)
         self.chat.tag_configure("meta", foreground=self.MUTED)
+        self.chat.configure(selectbackground=new_palette["SELECT"])
         self.theme_name = selected
         self._save_preferences()
 
