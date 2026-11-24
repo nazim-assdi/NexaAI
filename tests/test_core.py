@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
 from nexa_ai.local_backend import _parse_content, prepare_messages
-from nexa_ai.model_library import MODEL_CATALOG
+from nexa_ai.model_library import MODEL_CATALOG, _parse_content_range
+from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
@@ -37,6 +38,24 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(set(MODEL_CATALOG), {"qwen3-4b"})
         self.assertEqual(MODEL_CATALOG["qwen3-4b"]["id"], "nexa-qwen3-4b")
         self.assertEqual(MODEL_CATALOG["qwen3-4b"]["filename"], "Qwen3-4B-Q4_K_M.gguf")
+
+    def test_model_downloader_parses_content_range(self):
+        self.assertEqual(_parse_content_range("bytes 0-0/2500000000"), (0, 0, 2500000000))
+        self.assertIsNone(_parse_content_range("bytes */2500000000"))
+        self.assertIsNone(_parse_content_range("bad-range"))
+
+    def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
+        profiles = engine_profiles(cpu_count=4)
+        self.assertEqual([item["context"] for item in profiles], [4096, 2048, 1024])
+        self.assertEqual(profiles[-1]["batch"], 32)
+        self.assertEqual(profiles[0]["threads"], 4)
+
+    def test_llama_command_disables_gpu_and_uses_cpu_threads(self):
+        command = build_engine_command("llama-server.exe", "qwen.gguf", 11435, "nexa-qwen3-4b", engine_profiles(4)[1])
+        self.assertEqual(command[command.index("--n-gpu-layers") + 1], "0")
+        self.assertIn("--batch-size", command)
+        self.assertIn("--offline", command)
+        self.assertNotIn("--jinja", command)
 
     def test_qwen3_is_recommended_and_checksum_pinned(self):
         qwen = MODEL_CATALOG["qwen3-4b"]

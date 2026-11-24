@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import queue
@@ -20,10 +21,11 @@ from tkinter.scrolledtext import ScrolledText
 from nexa_ai.model_library import QWEN3_MODEL_KEY, QWEN3_MODEL_ID, QWEN3_MODEL_NAME, QWEN3_MODEL_FILENAME, model_is_installed, download_model
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
+from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -111,6 +113,13 @@ class NexaDesktop:
         self.root.minsize(820, 620)
         self.root.configure(bg=self.BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        try:
+            icon_base = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+            icon_path = icon_base / "assets" / "nexa-ai.ico"
+            if icon_path.is_file():
+                self.root.iconbitmap(default=str(icon_path))
+        except (tk.TclError, OSError):
+            pass
 
         self.runtime_dir, self.model_path, self.data_dir = configure_environment()
         self.app_root = app_data_dir()
@@ -191,6 +200,7 @@ class NexaDesktop:
         labels.pack(side="left")
         tk.Label(labels, text="NEXA AI", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 15)).pack(anchor="w")
         tk.Label(labels, text="PRIVATE · OFFLINE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+        tk.Label(labels, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.ACCENT, font=("Segoe UI Semibold", 7)).pack(anchor="w", pady=(3, 0))
 
         ttk.Button(
             sidebar, text="＋   New conversation", style="Accent.TButton",
@@ -225,6 +235,7 @@ class NexaDesktop:
         top.pack(fill="x")
         top.pack_propagate(False)
         tk.Label(top, text="Assistant", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(side="left", padx=22)
+        tk.Label(top, text="NTECH", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=5).pack(side="left")
         self.status_var = tk.StringVar(value="Starting…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9))
         self.status_label.pack(side="right", padx=(10, 22))
@@ -273,7 +284,7 @@ class NexaDesktop:
         ttk.Checkbutton(footer, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(anchor="e", pady=(5, 0))
         tk.Label(
             footer,
-            text="Your messages and files stay on this computer. No cloud API is used.",
+            text="LOCAL & PRIVATE  ·  DEVELOPED BY NTECH",
             bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8),
         ).pack(anchor="center", pady=(8, 0))
 
@@ -462,33 +473,67 @@ class NexaDesktop:
                 def report_progress(_label: str, done: int, total: int) -> None:
                     nonlocal last_progress
                     now = time.monotonic()
+                    elapsed = max(now - last_progress, 0.001)
+                    previous_bytes = getattr(report_progress, "_last_bytes", 0)
+                    speed = max(0.0, (done - previous_bytes) / elapsed)
                     if now - last_progress >= 0.4 or (total and done >= total):
+                        report_progress._last_bytes = done
                         last_progress = now
-                        self.events.put(("model_download_progress", (done, total)))
+                        self.events.put(("model_download_progress", (done, total, speed)))
 
                 self.active_model_path, _ = download_model(
                     QWEN3_MODEL_KEY, self.app_root, self.model_path, report_progress
                 )
             if not self.active_model_path.is_file():
                 raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
-            threads = max(2, min(4, (os.cpu_count() or 4)))
-            cmd = [
-                str(exe), "-m", str(self.active_model_path),
-                "--host", "127.0.0.1", "--port", str(LOCAL_MODEL_PORT),
-                "-c", "4096", "-t", str(threads), "--parallel", "1",
-                "--alias", self.current_model_id, "--no-webui", "--offline", "--jinja",
-            ]
-            if self.active_mmproj_path:
-                if not self.active_mmproj_path.is_file():
-                    raise FileNotFoundError(f"The vision projector is missing: {self.active_mmproj_path}")
-                cmd.extend(["--mmproj", str(self.active_mmproj_path)])
-            self.llama_process = subprocess.Popen(
-                cmd, cwd=str(self.runtime_dir), stdin=subprocess.DEVNULL,
-                stdout=self.log_handle, stderr=subprocess.STDOUT,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if not self._wait_for_url(f"http://127.0.0.1:{LOCAL_MODEL_PORT}/health", 360):
-                raise RuntimeError("The built-in AI model did not become ready. See the runtime log for details.")
+            available_ram = self._available_memory_gb()
+            if available_ram is not None:
+                self.log_handle.write(f"Available physical RAM before model load: {available_ram:.2f} GB\\n")
+                if available_ram < 3.5:
+                    self.log_handle.write("WARNING: available RAM is low; Qwen3 4B may still exceed memory limits.\\n")
+
+            profiles = engine_profiles(os.cpu_count())
+            if available_ram is not None and available_ram < 4.0:
+                profiles = profiles[1:]
+            if available_ram is not None and available_ram < 2.6:
+                profiles = profiles[1:]
+            server_ready = False
+            failures: list[str] = []
+            for attempt, profile in enumerate(profiles, start=1):
+                cmd = build_engine_command(exe, self.active_model_path, LOCAL_MODEL_PORT, self.current_model_id, profile)
+                self.log_handle.write(
+                    f"\\n=== llama-server attempt {attempt}: {profile['name']} "
+                    f"(ctx={profile['context']}, batch={profile['batch']}, ubatch={profile['ubatch']}, threads={profile['threads']}) ===\\n"
+                )
+                self.log_handle.write("Command: " + subprocess.list2cmdline(cmd) + "\\n")
+                self.log_handle.flush()
+                self.llama_process = subprocess.Popen(
+                    cmd, cwd=str(self.runtime_dir), stdin=subprocess.DEVNULL,
+                    stdout=self.log_handle, stderr=subprocess.STDOUT,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                if self._wait_for_model_server(300):
+                    server_ready = True
+                    self.log_handle.write(f"llama-server ready using {profile['name']} profile.\\n")
+                    break
+                return_code = self.llama_process.poll() if self.llama_process else None
+                failures.append(f"{profile['name']} profile: process exit code {return_code}")
+                self.log_handle.write(f"{failures[-1]}\\n")
+                self.log_handle.flush()
+                self._stop_llama_process()
+                time.sleep(2)
+
+            if not server_ready:
+                log_tail = self._read_runtime_log_tail(35)
+                ram_text = f"Available RAM before startup: {available_ram:.2f} GB" if available_ram is not None else "Available RAM: unavailable"
+                raise RuntimeError(
+                    "The local Qwen3 engine could not start after CPU/memory fallback profiles.\\n"
+                    + ram_text + "\\n"
+                    + "\\n".join(failures)
+                    + "\\n\\nRecent llama.cpp diagnostics:\\n"
+                    + (log_tail or "No llama.cpp output was recorded.")
+                    + f"\\n\\nFull log: {self.log_path}"
+                )
 
             if self.api_server is None:
                 from nexa_ai.config import settings
@@ -504,6 +549,63 @@ class NexaDesktop:
             self.events.put(("ready", None))
         except Exception as exc:
             self.events.put(("boot_error", str(exc)))
+
+    @staticmethod
+    def _available_memory_gb() -> float | None:
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        try:
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return status.ullAvailPhys / (1024 ** 3)
+        except (AttributeError, OSError):
+            pass
+        return None
+
+    def _read_runtime_log_tail(self, line_count: int = 30) -> str:
+        try:
+            self.log_handle.flush()
+            lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            return "\\n".join(lines[-line_count:])
+        except OSError:
+            return ""
+
+    def _stop_llama_process(self) -> None:
+        process = self.llama_process
+        if not process or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+    def _wait_for_model_server(self, timeout_seconds: int) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        health_url = f"http://127.0.0.1:{LOCAL_MODEL_PORT}/health"
+        while time.monotonic() < deadline:
+            if self.llama_process and self.llama_process.poll() is not None:
+                return False
+            try:
+                with httpx.Client(timeout=2) as client:
+                    response = client.get(health_url)
+                    if response.is_success:
+                        return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return False
 
     @staticmethod
     def _wait_for_url(url: str, timeout_seconds: int) -> bool:
@@ -537,19 +639,22 @@ class NexaDesktop:
                     self.status_var.set(str(payload))
                     self.status_label.configure(fg=self.ACCENT)
                 elif kind == "model_download_progress":
-                    done, total = payload
+                    done, total, speed = payload
+                    rate = f"{speed / (1024 ** 2):.1f} MB/s" if speed > 0 else "connecting…"
                     if total:
                         percent = done * 100 / total
+                        remaining = max(0, total - done)
+                        eta = f" · ETA {remaining / speed:.0f}s" if speed > 0 else ""
                         self.status_var.set(
-                            f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB"
+                            f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}"
                         )
                     else:
-                        self.status_var.set(f"Downloading Qwen3 4B · {done / (1024 ** 2):.0f} MB")
+                        self.status_var.set(f"Downloading Qwen3 4B · {done / (1024 ** 2):.0f} MB · {rate}")
                     self.status_label.configure(fg=self.ACCENT)
                 elif kind == "boot_error":
                     self.status_var.set("Offline engine failed to start")
                     self.status_label.configure(fg="#ff8d8d")
-                    messagebox.showerror("Nexa AI could not start", f"{payload}\n\nDiagnostic log: {self.log_path}")
+                    messagebox.showerror("Nexa AI could not start", str(payload))
                 elif kind == "stream":
                     self._append_stream(str(payload))
                 elif kind == "done":

@@ -33,3 +33,9 @@ Nexa AI uses third-party software and downloads local model weights for on-devic
 6. Windows SAPI voices
    Nexa AI uses Windows speech voices already installed by the user. No voice is
    redistributed by Nexa AI.
+
+
+7. Pillow
+   Project: https://python-pillow.org/
+   License: HPND. Used only in the Windows build pipeline to create the multi-resolution
+   application and installer icons; Pillow is not bundled with NexaAI.
