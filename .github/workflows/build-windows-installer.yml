@@ -1,0 +1,139 @@
+name: Build Nexa AI Windows Offline Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop.py"
+      - "nexa_ai/**"
+      - "requirements.txt"
+      - "installer/**"
+      - ".github/workflows/build-windows-installer.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    env:
+      LLAMA_CPP_TAG: b12651
+      MODEL_FILE: qwen2.5-1.5b-instruct-q4_k_m.gguf
+      MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Download official llama.cpp Windows CPU runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_TAG/llama-$env:LLAMA_CPP_TAG-bin-win-cpu-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\llama-runtime.zip"
+          Expand-Archive -LiteralPath "$env:RUNNER_TEMP\llama-runtime.zip" -DestinationPath "$env:RUNNER_TEMP\llama-runtime" -Force
+          $server = Get-ChildItem -Path "$env:RUNNER_TEMP\llama-runtime" -Filter "llama-server.exe" -Recurse | Select-Object -First 1
+          if (-not $server) { throw "llama-server.exe was not found in the official runtime archive." }
+          New-Item -ItemType Directory -Force -Path "runtime" | Out-Null
+          Copy-Item -Path (Join-Path $server.DirectoryName "*") -Destination "runtime" -Recurse -Force
+          & "runtime\llama-server.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "llama-server.exe validation failed." }
+
+      - name: Download bundled local language model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "models" | Out-Null
+          curl.exe --fail --location --retry 5 --retry-delay 3 --output (Join-Path "models" $env:MODEL_FILE) $env:MODEL_URL
+          if ($LASTEXITCODE -ne 0) { throw "Model download failed." }
+          $model = Get-Item (Join-Path "models" $env:MODEL_FILE)
+          if ($model.Length -lt 900MB) { throw "Model download is incomplete or unexpectedly small." }
+          $hash = (Get-FileHash $model.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e") { throw "Bundled model checksum verification failed." }
+          Write-Host "Bundled model size: $([math]::Round($model.Length / 1GB, 2)) GiB; SHA256 verified."
+          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/LICENSE" -OutFile "models\QWEN-LICENSE.txt"
+
+      - name: Install Python dependencies and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Compile and run tests
+        run: |
+          python -m compileall -q nexa_ai desktop.py run.py
+          python -m unittest discover -s tests -v
+
+      - name: Build self-contained desktop application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pyinstallerArgs = @(
+            "--noconfirm", "--clean", "--windowed", "--onedir", "--name", "NexaAI",
+            "--add-data", "models;models",
+            "--add-data", "runtime;runtime",
+            "--collect-all", "fastapi",
+            "--collect-all", "uvicorn",
+            "--collect-all", "pydantic",
+            "--collect-all", "pypdf",
+            "--collect-all", "multipart",
+            "--hidden-import", "uvicorn.logging",
+            "--hidden-import", "uvicorn.loops.auto",
+            "--hidden-import", "uvicorn.protocols.http.auto",
+            "--hidden-import", "uvicorn.lifespan.on",
+            "desktop.py"
+          )
+          python -m PyInstaller @pyinstallerArgs
+          if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
+          if (-not (Test-Path "dist\NexaAI\_internal\models\$env:MODEL_FILE")) { throw "Model was not bundled into the desktop application." }
+          if (-not (Test-Path "dist\NexaAI\_internal\runtime\llama-server.exe")) { throw "llama.cpp runtime was not bundled into the desktop application." }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build one-click Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler not found." }
+          & $compiler "installer\NexaAI.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
+          $installer = Get-ChildItem output -Filter "NexaAI-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Nexa AI installer was not produced." }
+          Get-FileHash $installer.FullName -Algorithm SHA256 | Format-List | Out-File "output\SHA256.txt"
+          Get-Item $installer.FullName | Select-Object Name,Length | Format-List
+
+      - name: Upload installable software
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexaAI-Windows-x64-Offline-Installer
+          path: |
+            output/NexaAI-Setup-*.exe
+            output/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub release with installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v1.0.0
+          name: Nexa AI Desktop v1.0.0 — Windows Offline Installer
+          body: |
+            Installable Windows x64 build of Nexa AI. The CPU inference runtime and Qwen2.5 1.5B Q4_K_M model are bundled in the installer. After installation, the app starts its local model itself and does not need Ollama, Python, command-line setup, an API key, or an internet connection for local chat.
+
+            The model is compact for low-memory PCs; response quality and generation speed are below larger cloud models. This first desktop build supports local chat and text/PDF document attachments.
+          files: |
+            output/NexaAI-Setup-*.exe
+            output/SHA256.txt
+          draft: false
+          prerelease: false
+          make_latest: true
