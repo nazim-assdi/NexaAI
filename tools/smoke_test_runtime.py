@@ -79,14 +79,21 @@ def wait_ready(port: int, process: subprocess.Popen, seconds: int) -> bool:
     return False
 
 
-def chat_test(port: int) -> str:
-    payload = {
+def build_smoke_payload() -> dict:
+    # Smoke tests validate inference/HTTP output, not chain-of-thought generation.
+    # The real desktop app keeps Qwen3 reasoning enabled for coding and automation.
+    return {
         "model": MODEL_ID,
         "messages": [{"role": "user", "content": "Reply with exactly: NEXA_OK"}],
         "temperature": 0,
-        "max_tokens": 16,
+        "max_tokens": 64,
+        "reasoning_effort": "none",
         "stream": False,
     }
+
+
+def chat_test(port: int) -> str:
+    payload = build_smoke_payload()
     request = Request(
         f"http://127.0.0.1:{port}/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -95,9 +102,16 @@ def chat_test(port: int) -> str:
     )
     with urlopen(request, timeout=240) as response:
         result = json.loads(response.read().decode("utf-8"))
-    answer = result["choices"][0]["message"]["content"]
+    choice = (result.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    answer = message.get("content")
     if not isinstance(answer, str) or not answer.strip():
-        raise RuntimeError(f"Chat endpoint returned empty content: {result!r}")
+        reasoning_chars = len(message.get("reasoning_content") or "")
+        raise RuntimeError(
+            "Chat endpoint returned no final answer "
+            f"(finish_reason={choice.get('finish_reason')!r}, "
+            f"reasoning_chars={reasoning_chars}). Response: {result!r}"
+        )
     return answer.strip()
 
 
