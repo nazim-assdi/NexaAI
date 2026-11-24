@@ -1,0 +1,15 @@
+Nexa AI bundles third-party software and model weights for local-only inference.
+
+1. llama.cpp
+   Project: https://github.com/ggml-org/llama.cpp
+   License: MIT
+   The Windows CPU runtime is downloaded from the official ggml-org/llama.cpp release.
+
+2. Qwen2.5-1.5B-Instruct-GGUF (Q4_K_M)
+   Project: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+   License: Apache License 2.0
+   Model card and license information are available at the project URL.
+
+3. Python dependencies
+   FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv and pypdf
+   retain their respective upstream licenses. See each upstream project for license terms.
