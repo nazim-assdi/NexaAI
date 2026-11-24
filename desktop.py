@@ -111,6 +111,7 @@ class NexaDesktop:
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
         self._set_palette(self.theme_name)
+        self.root.configure(bg=self.BG)
         self.current_model_key = "qwen2.5-1.5b"
         self.current_model_id = MODEL_ID
         self.current_model_name = "Qwen 2.5 · 1.5B Q4"
@@ -478,7 +479,8 @@ class NexaDesktop:
                 message = str(result)[:6000]
                 self.root.after(0, lambda: messagebox.showinfo(f"Plugin: {name}", message))
             except Exception as exc:
-                self.root.after(0, lambda: messagebox.showerror(f"Plugin: {name}", str(exc)))
+                error_text = str(exc)
+                self.root.after(0, lambda e=error_text: messagebox.showerror(f"Plugin: {name}", e))
 
         threading.Thread(target=worker, daemon=True, name=f"PluginCommand-{name}").start()
 
