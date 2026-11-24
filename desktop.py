@@ -52,6 +52,7 @@ def configure_environment() -> tuple[Path, Path, Path]:
     os.environ["NEXA_PROVIDER"] = "local"
     os.environ["NEXA_LOCAL_BASE_URL"] = f"http://127.0.0.1:{LOCAL_MODEL_PORT}/v1"
     os.environ["NEXA_LOCAL_API_KEY"] = ""
+    os.environ.pop("NEXA_MM_PROJ_PATH", None)
     os.environ["NEXA_MODEL"] = MODEL_ID
     os.environ["NEXA_HOST"] = "127.0.0.1"
     os.environ["NEXA_PORT"] = str(API_PORT)
@@ -389,6 +390,10 @@ class NexaDesktop:
         self.current_model_name = item["name"]
         self.active_model_path = model_path
         self.active_mmproj_path = mmproj_path
+        if mmproj_path:
+            os.environ["NEXA_MM_PROJ_PATH"] = str(mmproj_path)
+        else:
+            os.environ.pop("NEXA_MM_PROJ_PATH", None)
         self.model_name_var.set(item["name"])
         self.ready = False
         self.send_button.configure(state="disabled")
@@ -582,7 +587,7 @@ class NexaDesktop:
         path = filedialog.askopenfilename(
             title="Attach a local document",
             filetypes=[
-                ("Supported files", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log *.png *.jpg *.jpeg *.webp *.bmp *.mp3 *.wav *.m4a *.flac *.ogg *.mp4 *.mkv *.mov *.avi"),
+                ("Supported files", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log *.png *.jpg *.jpeg *.webp *.bmp *.mp4 *.mkv *.mov *.avi *.webm"),
                 ("All files", "*.*"),
             ],
         )
