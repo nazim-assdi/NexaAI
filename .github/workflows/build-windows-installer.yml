@@ -97,6 +97,14 @@ jobs:
             "--collect-all", "pypdf",
             "--collect-all", "multipart",
             "--collect-all", "imageio_ffmpeg",
+            "--collect-all", "faster_whisper",
+            "--collect-all", "ctranslate2",
+            "--collect-all", "av",
+            "--collect-all", "sounddevice",
+            "--collect-all", "pyttsx3",
+            "--collect-all", "comtypes",
+            "--hidden-import", "pyttsx3.drivers.sapi5",
+            "--hidden-import", "comtypes.client",
             "--hidden-import", "uvicorn.logging",
             "--hidden-import", "uvicorn.loops.auto",
             "--hidden-import", "uvicorn.protocols.http.auto",
@@ -158,8 +166,8 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v1.1.0
-          name: Nexa AI Desktop v1.1.0 — Windows Offline Installer
+          tag_name: desktop-v1.2.0
+          name: Nexa AI Desktop v1.2.0 — Offline AI + Voice + n8n Studio
           body: |
             Installable Windows x64 build of Nexa AI. The CPU inference runtime and Qwen2.5 1.5B Q4_K_M model are bundled in the installer. After installation, the app starts its local model itself and does not need Ollama, Python, command-line setup, an API key, or an internet connection for local chat.
 
