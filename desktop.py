@@ -1020,17 +1020,17 @@ class NexaDesktop:
         try:
             from faster_whisper import WhisperModel
             voice_dir = self.app_root / "Voice"
-            model_dir = voice_dir / "whisper-small"
+            model_dir = voice_dir / "whisper-base"
             model_dir.mkdir(parents=True, exist_ok=True)
 
             if self.whisper_model is None:
-                self.events.put(("voice_status", "Loading Whisper small model · first use downloads about 500 MB"))
+                self.events.put(("voice_status", "Loading Whisper base model · first use downloads about 150 MB"))
                 previous_hf = os.environ.pop("HF_HUB_OFFLINE", None)
                 previous_transformers = os.environ.pop("TRANSFORMERS_OFFLINE", None)
                 try:
                     # Model download is performed only on first use; subsequent recognition is local.
                     self.whisper_model = WhisperModel(
-                        "small", device="cpu", compute_type="int8", download_root=str(model_dir)
+                        "base", device="cpu", compute_type="int8", download_root=str(model_dir)
                     )
                 finally:
                     if previous_hf is not None:
