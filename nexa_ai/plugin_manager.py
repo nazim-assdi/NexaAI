@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -243,7 +244,12 @@ class PluginManager:
             if not spec or not spec.loader:
                 continue
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
             register = getattr(module, "register", None)
             if callable(register):
                 register(context)
