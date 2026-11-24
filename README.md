@@ -1,42 +1,100 @@
 # Nexa AI — Installable Offline Desktop Assistant
 
-Nexa AI is a Windows x64 desktop app that includes its own CPU inference runtime and local language model. It does not require Python, Ollama, a terminal, an API key, or a separate model download on the user's PC.
+Nexa AI is a Windows x64 desktop application with a built-in CPU inference runtime. It does not require Python, Ollama, a terminal, an API key, or a separate model manager.
 
-## Install the software
+## Install
 
-1. Open the repository's Releases page: https://github.com/nazim-assdi/NexaAI/releases
-2. Download NexaAI-Setup-1.0.0-Windows-x64.exe.
-3. Double-click the installer and finish the setup.
+1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
+2. Download `NexaAI-Setup-1.1.0-Windows-x64.exe`.
+3. Double-click the installer and finish setup.
 4. Launch Nexa AI from the Start Menu or Desktop shortcut.
 
-The installer bundles:
-- Nexa AI desktop interface and local API.
-- llama.cpp CPU runtime (starts automatically inside Nexa AI).
-- Qwen2.5-1.5B-Instruct GGUF Q4_K_M local model (about 1.12 GB before installer compression).
+The base installer contains the desktop app, llama.cpp CPU runtime and Qwen2.5-1.5B-Instruct Q4_K_M model. The base app works offline after installation.
 
-After installation, Nexa AI launches its model locally. Disconnecting the internet does not stop normal chat or supported document analysis. The app stores chats and attachments under %LOCALAPPDATA%\NexaAI\Data.
+## Model Library
 
-## Local-only / offline behaviour
+Open **Model Library** in the left panel to install optional models. Downloads happen inside the app; no command line is needed. Once a model is downloaded it can be selected offline. Nexa loads one chat model at a time to limit RAM use.
 
-- No external model API is called in the desktop build.
-- The bundled llama.cpp process binds only to 127.0.0.1 and runs with offline mode enabled.
-- Nexa AI's local OpenAI-compatible API is available at http://127.0.0.1:8000/v1 while the app is open.
-- The app closes its model process when the window exits.
-- PDF files with selectable text and common text/code files can be attached locally.
-- Scanned PDFs need OCR, and image/audio/video understanding is not included in this first desktop build.
+Included model catalogue:
+- **Qwen2.5 1.5B Instruct** — bundled general-purpose model.
+- **Qwen2.5 Coder 1.5B Instruct Q4_K_M** — optional coding model.
+- **SmolLM2 1.7B Instruct Q4_K_M** — optional compact general-purpose model.
+- **Qwen2.5-VL 3B Q4_K_M + mmproj** — optional image/vision model pack. This is much larger and may exceed comfortable memory use on an 8 GB PC.
 
-## Performance and hardware
+Optional model downloads require internet once. They are stored under `%LOCALAPPDATA%\NexaAI\models`; afterwards, model loading is local.
 
-The default bundle uses a 1.5-billion-parameter Q4_K_M model to keep memory use manageable on ordinary CPU-only computers. It is intended for local chat, writing, explanations and basic coding help. It is smaller and less capable than large cloud models; generation speed depends on CPU and available RAM. Use a 64-bit Windows x64 PC. Keep at least 3 GB free for application files and additional working space; the installer itself is large because the model weights are included.
+## Plugin Manager
 
-## Build the installer from source
+Open **Plugin Manager** from the left panel.
 
-The GitHub Actions workflow Build Nexa AI Windows Offline Installer downloads the official llama.cpp Windows CPU runtime and the Qwen model, validates the model SHA256, packages the desktop application with PyInstaller, and builds a single Inno Setup installer.
+The built-in catalogue documents planned/local capability packs for:
+- Vision and video understanding
+- Offline audio transcription
+- Bangla and English OCR
+- Offline image generation
+- Motion-video clip creation
+- Advanced AI video generation (requires high-end hardware and large models)
 
-Run it from GitHub Actions, choose Build Nexa AI Windows Offline Installer, then select Run workflow. A successful build publishes an installer release and a downloadable Actions artifact.
+These catalogue cards describe requirements; a card is not a claim that its optional runtime/model pack is already installed. Nexa also supports importing third-party plugin ZIP packages. Imported plugins must contain a `plugin.json` manifest and a Python entrypoint that defines `register(context)`. Imported plugin code is disabled until explicitly enabled by the user. Only import code from developers you trust.
 
-## Development
+A minimal plugin package looks like this:
 
-Install the packages from requirements.txt, then run the compile and unit-test checks. The workflow runs these checks before building the Windows installer.
+```text
+example-plugin/
+  plugin.json
+  plugin.py
+```
 
-License notes for the bundled llama.cpp runtime and Qwen model are included in THIRD-PARTY-NOTICES.txt.
+`plugin.json`:
+
+```json
+{
+  "id": "example-plugin",
+  "name": "Example Plugin",
+  "entrypoint": "plugin.py"
+}
+```
+
+`plugin.py`:
+
+```python
+def register(context):
+    context.add_command("example.hello", lambda: "Hello from Nexa")
+```
+
+Plugin commands are registered in the plugin context. Future Nexa versions can expose additional UI panels and events through the same context API.
+
+## Premium Eye Comfort Theme
+
+The default theme is **Eye Comfort Premium**, using a muted warm green/charcoal palette and softened contrast. You can switch at the top of the window to:
+- Eye Comfort Premium
+- OLED Midnight
+- Soft Paper
+
+The selected theme is saved locally and restored on the next launch.
+
+## Offline and privacy behaviour
+
+- Local chat uses only the bundled/local model server; there is no cloud API in the desktop build.
+- The bundled inference process listens only on `127.0.0.1`.
+- Chat history, preferences, optional models and imported plugins are stored under `%LOCALAPPDATA%\NexaAI`.
+- Optional models/plugins need internet for their initial download/import; installed local assets can then be used offline.
+
+## Hardware notes
+
+The default 1.5B Q4 model is intended for low-memory CPU PCs. The optional 1.5B/1.7B models also fit more comfortably than larger models, but only one is loaded at a time. The Qwen2.5-VL 3B vision pack is significantly larger and may be slow or memory-constrained on 8 GB RAM. Large offline image/video-generation models are not bundled in the base installer.
+
+## Build from source
+
+The GitHub Actions workflow **Build Nexa AI Windows Offline Installer**:
+1. Downloads and checksum-verifies the official llama.cpp Windows CPU runtime.
+2. Downloads and validates the bundled default model.
+3. Installs Python dependencies, compiles source, and runs unit tests.
+4. Packages the app, runtime and model with PyInstaller.
+5. Creates a one-click Inno Setup installer and publishes a GitHub Release.
+
+The installer is for Windows x64. The workflow can also be started manually from the GitHub Actions tab.
+
+## Third-party licences
+
+The default Qwen model and optional catalogue models are Apache-2.0; check each upstream model card before redistributing modified or additional weights. The llama.cpp runtime is MIT-licensed. See `THIRD-PARTY-NOTICES.txt` for the bundled notices.
