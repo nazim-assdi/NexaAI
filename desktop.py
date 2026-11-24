@@ -468,22 +468,26 @@ class NexaDesktop:
                 raise FileNotFoundError(f"Built-in inference runtime is missing: {exe}")
             if not model_is_installed(QWEN3_MODEL_KEY, self.app_root, self.model_path):
                 self.events.put(("model_download_status", "First setup: downloading Qwen3 4B Q4_K_M · about 2.5 GB · internet required"))
-                last_progress = 0.0
+            else:
+                self.events.put(("model_download_status", "Verifying installed Qwen3 model integrity…"))
+            last_progress = 0.0
 
-                def report_progress(_label: str, done: int, total: int) -> None:
-                    nonlocal last_progress
-                    now = time.monotonic()
-                    elapsed = max(now - last_progress, 0.001)
-                    previous_bytes = getattr(report_progress, "_last_bytes", 0)
-                    speed = max(0.0, (done - previous_bytes) / elapsed)
-                    if now - last_progress >= 0.4 or (total and done >= total):
-                        report_progress._last_bytes = done
-                        last_progress = now
-                        self.events.put(("model_download_progress", (done, total, speed)))
+            def report_progress(_label: str, done: int, total: int) -> None:
+                nonlocal last_progress
+                now = time.monotonic()
+                elapsed = max(now - last_progress, 0.001)
+                previous_bytes = getattr(report_progress, "_last_bytes", 0)
+                speed = max(0.0, (done - previous_bytes) / elapsed)
+                if now - last_progress >= 0.4 or (total and done >= total):
+                    report_progress._last_bytes = done
+                    last_progress = now
+                    self.events.put(("model_download_progress", (done, total, speed)))
 
-                self.active_model_path, _ = download_model(
-                    QWEN3_MODEL_KEY, self.app_root, self.model_path, report_progress
-                )
+            # download_model verifies the full SHA-256 even when a GGUF is already present.
+            # A damaged local file is discarded and safely downloaded again.
+            self.active_model_path, _ = download_model(
+                QWEN3_MODEL_KEY, self.app_root, self.model_path, report_progress
+            )
             if not self.active_model_path.is_file():
                 raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
             model_sha = verify_model_file(QWEN3_MODEL_KEY, self.active_model_path)

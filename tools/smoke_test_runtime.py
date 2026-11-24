@@ -12,6 +12,9 @@ from urllib.request import Request, urlopen
 
 import httpx
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from nexa_ai.engine_config import build_engine_command, engine_profiles
 
 MODEL_URL = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"

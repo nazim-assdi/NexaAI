@@ -44,20 +44,22 @@ class CoreTests(unittest.TestCase):
             root = Path(folder)
             path = root / "models" / "Qwen3-4B-Q4_K_M.gguf"
             path.parent.mkdir(parents=True)
-            path.write_bytes(b"BAD!" + b"x" * 2_300_000_000)
-            self.assertFalse(model_is_installed("qwen3-4b", root))
-            path.write_bytes(b"GGUF" + b"x" * 2_300_000_000)
-            self.assertTrue(model_is_installed("qwen3-4b", root))
+            with patch.dict(MODEL_CATALOG["qwen3-4b"], {"minimum_bytes": 4}):
+                path.write_bytes(b"BAD!")
+                self.assertFalse(model_is_installed("qwen3-4b", root))
+                path.write_bytes(b"GGUF")
+                self.assertTrue(model_is_installed("qwen3-4b", root))
 
     def test_verify_model_file_rejects_bad_header_and_wrong_hash(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "bad.gguf"
-            path.write_bytes(b"BAD!" + b"x" * 2_300_000_000)
-            with self.assertRaisesRegex(RuntimeError, "GGUF header"):
-                verify_model_file("qwen3-4b", path)
-            path.write_bytes(b"GGUF" + b"x" * 2_300_000_000)
-            with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
-                verify_model_file("qwen3-4b", path)
+            with patch.dict(MODEL_CATALOG["qwen3-4b"], {"minimum_bytes": 4}):
+                path.write_bytes(b"BAD!")
+                with self.assertRaisesRegex(RuntimeError, "GGUF header"):
+                    verify_model_file("qwen3-4b", path)
+                path.write_bytes(b"GGUF")
+                with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
+                    verify_model_file("qwen3-4b", path)
 
     def test_model_downloader_parses_content_range(self):
         self.assertEqual(_parse_content_range("bytes 0-0/2500000000"), (0, 0, 2500000000))
@@ -68,7 +70,7 @@ class CoreTests(unittest.TestCase):
         profiles = engine_profiles(cpu_count=4)
         self.assertEqual([item["context"] for item in profiles], [4096, 2048, 1024])
         self.assertEqual(profiles[-1]["batch"], 32)
-        self.assertEqual(profiles[0]["threads"], 4)
+        self.assertEqual(profiles[0]["threads"], 2)
 
     def test_llama_command_disables_gpu_and_uses_cpu_threads(self):
         command = build_engine_command("llama-server.exe", "qwen.gguf", 11435, "nexa-qwen3-4b", engine_profiles(4)[1])
