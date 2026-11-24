@@ -49,9 +49,10 @@ class CoreTests(unittest.TestCase):
                     "name": "Example Plugin",
                     "entrypoint": "plugin.py",
                 }))
+                archive.writestr("example-plugin/helper.py", "MESSAGE = 'ok'\n")
                 archive.writestr(
                     "example-plugin/plugin.py",
-                    "def register(context):\n    context.add_command('example.run', lambda: 'ok')\n",
+                    "from .helper import MESSAGE\ndef register(context):\n    context.add_command('example.run', lambda: MESSAGE)\n",
                 )
             plugin_id = manager.import_plugin_zip(plugin_zip)
             self.assertEqual(plugin_id, "example-plugin")
