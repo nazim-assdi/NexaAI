@@ -16,8 +16,11 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from nexa_ai.model_library import MODEL_CATALOG, model_is_installed, model_paths, download_model
+from nexa_ai.plugin_manager import PluginManager
+
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 MODEL_ID = "nexa-qwen2.5-1.5b"
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -64,13 +67,34 @@ def configure_environment() -> tuple[Path, Path, Path]:
 
 
 class NexaDesktop:
-    BG = "#0b1020"
-    PANEL = "#111a2e"
-    PANEL_2 = "#17233a"
-    TEXT = "#e8eef9"
-    MUTED = "#92a1bb"
-    ACCENT = "#6d9eff"
-    BORDER = "#253551"
+    BG = "#171a17"
+    PANEL = "#202720"
+    PANEL_2 = "#2b352c"
+    TEXT = "#e5e8d8"
+    MUTED = "#a7b19f"
+    ACCENT = "#c4d6a1"
+    BORDER = "#3a4939"
+
+    THEMES = {
+        "Eye Comfort Premium": {
+            "BG": "#171a17", "PANEL": "#202720", "PANEL_2": "#2b352c",
+            "TEXT": "#e5e8d8", "MUTED": "#a7b19f", "ACCENT": "#c4d6a1",
+            "BORDER": "#3a4939", "USER": "#bfd0b1", "AI": "#a8d3b1",
+            "SELECT": "#405641", "ACTIVE": "#394a3b", "BUTTON_TEXT": "#172018",
+        },
+        "OLED Midnight": {
+            "BG": "#090b0d", "PANEL": "#121619", "PANEL_2": "#1c252a",
+            "TEXT": "#e4edf0", "MUTED": "#93a3aa", "ACCENT": "#8ac8c2",
+            "BORDER": "#28363b", "USER": "#a9c5eb", "AI": "#91d3b4",
+            "SELECT": "#294c50", "ACTIVE": "#263b40", "BUTTON_TEXT": "#081413",
+        },
+        "Soft Paper": {
+            "BG": "#e9e5d9", "PANEL": "#f2efe5", "PANEL_2": "#e0e5d8",
+            "TEXT": "#29332d", "MUTED": "#657166", "ACCENT": "#718f72",
+            "BORDER": "#c9d0c4", "USER": "#4c6687", "AI": "#477b59",
+            "SELECT": "#c4d7c6", "ACTIVE": "#d2dfd1", "BUTTON_TEXT": "#ffffff",
+        },
+    }
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -81,6 +105,16 @@ class NexaDesktop:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.runtime_dir, self.model_path, self.data_dir = configure_environment()
+        self.app_root = app_data_dir()
+        self.plugin_manager = PluginManager(self.app_root)
+        self.preferences_path = self.app_root / "preferences.json"
+        self.theme_name = self._load_theme_preference()
+        self._set_palette(self.theme_name)
+        self.current_model_key = "qwen2.5-1.5b"
+        self.current_model_id = MODEL_ID
+        self.current_model_name = "Qwen 2.5 · 1.5B Q4"
+        self.active_model_path = self.model_path
+        self.active_mmproj_path: Path | None = None
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
         self.llama_process: subprocess.Popen | None = None
@@ -143,16 +177,25 @@ class NexaDesktop:
         ttk.Button(
             sidebar, text="＋   New conversation", style="Accent.TButton",
             command=self.new_conversation,
-        ).pack(fill="x", padx=14, pady=(0, 18))
+        ).pack(fill="x", padx=14, pady=(0, 12))
+        ttk.Button(
+            sidebar, text="◈   Model Library", style="Nexa.TButton",
+            command=self.open_model_library,
+        ).pack(fill="x", padx=14, pady=4)
+        ttk.Button(
+            sidebar, text="▦   Plugin Manager", style="Nexa.TButton",
+            command=self.open_plugin_manager,
+        ).pack(fill="x", padx=14, pady=(4, 14))
         tk.Label(sidebar, text="WORKSPACE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=20, pady=(4, 10))
         tk.Label(sidebar, text="Local assistant", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=5)
         tk.Label(sidebar, text="Chat & writing", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=3)
-        tk.Label(sidebar, text="Documents (PDF / text)", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=3)
+        tk.Label(sidebar, text="Documents & local tools", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=3)
         tk.Frame(sidebar, bg=self.PANEL).pack(fill="both", expand=True)
         tk.Frame(sidebar, bg=self.BORDER, height=1).pack(fill="x", padx=16, pady=(0, 12))
-        tk.Label(sidebar, text="MODEL", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=20)
-        tk.Label(sidebar, text="Qwen 2.5 · 1.5B Q4", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w", padx=20, pady=(5, 3))
-        tk.Label(sidebar, text="Runs on this PC", bg=self.PANEL, fg="#73d6a4", font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=(0, 18))
+        tk.Label(sidebar, text="ACTIVE MODEL", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=20)
+        self.model_name_var = tk.StringVar(value=self.current_model_name)
+        tk.Label(sidebar, textvariable=self.model_name_var, bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10), wraplength=190, justify="left").pack(anchor="w", padx=20, pady=(5, 3))
+        tk.Label(sidebar, text="Runs locally on this PC", bg=self.PANEL, fg="#8fbd92", font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=(0, 18))
 
         main = tk.Frame(shell, bg=self.BG)
         main.pack(side="left", fill="both", expand=True)
@@ -162,7 +205,15 @@ class NexaDesktop:
         tk.Label(top, text="Assistant", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(side="left", padx=22)
         self.status_var = tk.StringVar(value="Starting…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9))
-        self.status_label.pack(side="right", padx=22)
+        self.status_label.pack(side="right", padx=(10, 22))
+        self.theme_var = tk.StringVar(value=self.theme_name)
+        self.theme_selector = ttk.Combobox(
+            top, textvariable=self.theme_var, values=list(self.THEMES.keys()),
+            state="readonly", width=20, font=("Segoe UI", 9),
+        )
+        self.theme_selector.pack(side="right", padx=8)
+        self.theme_selector.bind("<<ComboboxSelected>>", self._change_theme)
+        self.ttk_style = style
 
         self.chat = ScrolledText(
             main, wrap="word", bg=self.BG, fg=self.TEXT, insertbackground=self.TEXT,
@@ -171,8 +222,8 @@ class NexaDesktop:
             state="disabled",
         )
         self.chat.pack(fill="both", expand=True)
-        self.chat.tag_configure("name_user", foreground="#9bbcff", font=("Segoe UI Semibold", 10))
-        self.chat.tag_configure("name_ai", foreground="#83dcb0", font=("Segoe UI Semibold", 10))
+        self.chat.tag_configure("name_user", foreground=self.THEMES[self.theme_name]["USER"], font=("Segoe UI Semibold", 10))
+        self.chat.tag_configure("name_ai", foreground=self.THEMES[self.theme_name]["AI"], font=("Segoe UI Semibold", 10))
         self.chat.tag_configure("body", foreground=self.TEXT, font=("Segoe UI", 10), lmargin1=12, lmargin2=12, spacing1=4, spacing3=14)
         self.chat.tag_configure("meta", foreground=self.MUTED, font=("Segoe UI", 8), lmargin1=12, spacing3=14)
 
@@ -200,6 +251,201 @@ class NexaDesktop:
             bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8),
         ).pack(anchor="center", pady=(8, 0))
 
+    def _load_theme_preference(self) -> str:
+        try:
+            prefs = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            selected = str(prefs.get("theme", "Eye Comfort Premium"))
+            return selected if selected in self.THEMES else "Eye Comfort Premium"
+        except (OSError, ValueError, AttributeError):
+            return "Eye Comfort Premium"
+
+    def _set_palette(self, theme_name: str) -> None:
+        palette = self.THEMES.get(theme_name, self.THEMES["Eye Comfort Premium"])
+        for key in ("BG", "PANEL", "PANEL_2", "TEXT", "MUTED", "ACCENT", "BORDER"):
+            setattr(self, key, palette[key])
+        self.theme_name = theme_name
+
+    def _change_theme(self, _event=None) -> None:
+        selected = self.theme_var.get()
+        if selected not in self.THEMES or selected == self.theme_name:
+            return
+        old_palette = dict(self.THEMES[self.theme_name])
+        self._set_palette(selected)
+        new_palette = self.THEMES[self.theme_name]
+        colour_map = {
+            old_palette["BG"]: self.BG,
+            old_palette["PANEL"]: self.PANEL,
+            old_palette["PANEL_2"]: self.PANEL_2,
+            old_palette["TEXT"]: self.TEXT,
+            old_palette["MUTED"]: self.MUTED,
+            old_palette["ACCENT"]: self.ACCENT,
+            old_palette["BORDER"]: self.BORDER,
+            old_palette["USER"]: new_palette["USER"],
+            old_palette["AI"]: new_palette["AI"],
+            old_palette["SELECT"]: new_palette["SELECT"],
+        }
+        self._retheme_widget(self.root, colour_map)
+        self.root.configure(bg=self.BG)
+        self.ttk_style.configure("Nexa.TButton", background=self.PANEL_2, foreground=self.TEXT)
+        self.ttk_style.configure("Accent.TButton", background=self.ACCENT, foreground=new_palette["BUTTON_TEXT"])
+        self.ttk_style.configure("TCombobox", fieldbackground=self.PANEL_2, background=self.PANEL_2, foreground=self.TEXT)
+        self.chat.tag_configure("name_user", foreground=new_palette["USER"])
+        self.chat.tag_configure("name_ai", foreground=new_palette["AI"])
+        self.theme_name = selected
+        self._save_preferences()
+
+    def _retheme_widget(self, widget: tk.Misc, colour_map: dict[str, str]) -> None:
+        for option in ("bg", "background", "fg", "foreground", "insertbackground", "highlightbackground", "selectbackground"):
+            try:
+                value = widget.cget(option)
+                if value in colour_map:
+                    widget.configure(**{option: colour_map[value]})
+            except (tk.TclError, TypeError):
+                pass
+        for child in widget.winfo_children():
+            self._retheme_widget(child, colour_map)
+
+    def _save_preferences(self) -> None:
+        try:
+            payload = {"theme": self.theme_name}
+            tmp = self.preferences_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.preferences_path)
+        except OSError:
+            pass
+
+    def open_model_library(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · Model Library")
+        window.geometry("760x640")
+        window.configure(bg=self.BG)
+        tk.Label(window, text="Local Model Library", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 18)).pack(anchor="w", padx=22, pady=(20, 4))
+        tk.Label(window, text="Download optional models once, then switch between them without internet.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=22, pady=(0, 14))
+        body = tk.Frame(window, bg=self.BG)
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 18))
+
+        for key, item in MODEL_CATALOG.items():
+            row = tk.Frame(body, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+            row.pack(fill="x", padx=4, pady=6)
+            info = tk.Frame(row, bg=self.PANEL)
+            info.pack(side="left", fill="both", expand=True, padx=14, pady=11)
+            tk.Label(info, text=f"{item['name']}  ·  {item['role']}", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w")
+            tk.Label(info, text=item["description"], bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9), wraplength=440, justify="left").pack(anchor="w", pady=(4, 2))
+            warning = item.get("warning") or item.get("ram", "")
+            tk.Label(info, text=f"{item['size_label']}  ·  {warning}", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8), wraplength=440, justify="left").pack(anchor="w")
+            controls = tk.Frame(row, bg=self.PANEL)
+            controls.pack(side="right", padx=12, pady=10)
+            state_text = "Bundled" if item.get("bundled") else ("Installed" if model_is_installed(key, self.app_root, self.model_path) else "Not installed")
+            state = tk.Label(controls, text=state_text, bg=self.PANEL, fg="#8fbd92" if state_text in ("Bundled", "Installed") else self.MUTED, font=("Segoe UI", 8))
+            state.pack(pady=(0, 6))
+            if state_text == "Not installed":
+                button = ttk.Button(controls, text="Download", style="Nexa.TButton")
+                button.configure(command=lambda k=key, b=button, s=state: self._download_model_from_library(k, b, s, window))
+                button.pack(fill="x")
+            elif key != self.current_model_key:
+                ttk.Button(controls, text="Use model", style="Accent.TButton", command=lambda k=key, w=window: self._activate_model(k, w)).pack(fill="x")
+            else:
+                ttk.Label(controls, text="Active", style="Nexa.TButton").pack(fill="x")
+
+    def _download_model_from_library(self, model_key: str, button: ttk.Button, state: tk.Label, parent: tk.Toplevel) -> None:
+        button.configure(state="disabled", text="Downloading…")
+        state.configure(text="Preparing download…", fg=self.ACCENT)
+
+        def worker() -> None:
+            try:
+                def progress(label: str, done: int, total: int) -> None:
+                    percent = f"{done / total * 100:.0f}%" if total else f"{done / (1024 * 1024):.0f} MB"
+                    self.root.after(0, lambda p=percent, s=state, n=label: s.configure(text=f"{n}: {p}"))
+
+                download_model(model_key, self.app_root, self.model_path, progress)
+                self.root.after(0, lambda: (button.configure(state="normal", text="Use model"), state.configure(text="Installed", fg="#8fbd92"), button.configure(command=lambda k=model_key, w=parent: self._activate_model(k, w))))
+            except Exception as exc:
+                self.root.after(0, lambda e=str(exc): (button.configure(state="normal", text="Retry"), state.configure(text="Download failed", fg="#dd8d85"), messagebox.showerror("Model download failed", e, parent=parent), button.configure(command=lambda k=model_key, b=button, s=state, w=parent: self._download_model_from_library(k, b, s, w))))
+
+        threading.Thread(target=worker, daemon=True, name=f"ModelDownload-{model_key}").start()
+
+    def _activate_model(self, model_key: str, parent: tk.Toplevel | None = None) -> None:
+        if self.busy or self.uploading:
+            messagebox.showinfo("Model is busy", "Wait until the current task finishes before switching models.", parent=parent)
+            return
+        if not model_is_installed(model_key, self.app_root, self.model_path):
+            messagebox.showwarning("Model not installed", "Download this model from the Model Library first.", parent=parent)
+            return
+        item = MODEL_CATALOG[model_key]
+        model_path, mmproj_path = model_paths(model_key, self.app_root, self.model_path)
+        if not model_path:
+            messagebox.showerror("Model unavailable", "The selected model file could not be found.", parent=parent)
+            return
+        if self.llama_process and self.llama_process.poll() is None:
+            self.llama_process.terminate()
+            try:
+                self.llama_process.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                self.llama_process.kill()
+        self.current_model_key = model_key
+        self.current_model_id = item["id"]
+        self.current_model_name = item["name"]
+        self.active_model_path = model_path
+        self.active_mmproj_path = mmproj_path
+        self.model_name_var.set(item["name"])
+        self.ready = False
+        self.send_button.configure(state="disabled")
+        self.status_var.set(f"Loading {item['name']}…")
+        self.status_label.configure(fg=self.ACCENT)
+        if parent:
+            parent.destroy()
+        threading.Thread(target=self._boot_engine, daemon=True, name="NexaModelSwitch").start()
+
+    def open_plugin_manager(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · Plugin Manager")
+        window.geometry("820x690")
+        window.configure(bg=self.BG)
+        tk.Label(window, text="Plugin Manager", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 18)).pack(anchor="w", padx=22, pady=(20, 4))
+        tk.Label(window, text="Enable trusted extensions and manage optional local AI capabilities.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=22, pady=(0, 10))
+        body = tk.Frame(window, bg=self.BG)
+        body.pack(fill="both", expand=True, padx=16, pady=4)
+        for item in self.plugin_manager.list_plugins():
+            row = tk.Frame(body, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+            row.pack(fill="x", padx=4, pady=5)
+            line = tk.Frame(row, bg=self.PANEL)
+            line.pack(fill="x", padx=12, pady=(9, 2))
+            variable = tk.BooleanVar(value=item["enabled"])
+            check = ttk.Checkbutton(
+                line, text=item["name"], variable=variable,
+                command=lambda pid=item["id"], var=variable: self._toggle_plugin(pid, var.get()),
+            )
+            check.pack(side="left")
+            tk.Label(line, text=item.get("status", ""), bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
+            tk.Label(row, text=item["description"], bg=self.PANEL, fg=self.TEXT, font=("Segoe UI", 9), wraplength=750, justify="left").pack(anchor="w", padx=14, pady=(2, 4))
+            tk.Label(row, text=f"Requires: {item['requires']}", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8), wraplength=750, justify="left").pack(anchor="w", padx=14, pady=(0, 9))
+        footer = tk.Frame(window, bg=self.BG)
+        footer.pack(fill="x", padx=20, pady=(5, 18))
+        ttk.Button(footer, text="Import plugin ZIP…", style="Nexa.TButton", command=self._import_plugin_zip).pack(side="left")
+        tk.Label(footer, text="Imported plugin code runs only after you enable it. Import extensions you trust.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), wraplength=450).pack(side="left", padx=12)
+
+    def _toggle_plugin(self, plugin_id: str, enabled: bool) -> None:
+        self.plugin_manager.set_enabled(plugin_id, enabled)
+        try:
+            self.plugin_manager.load_enabled_imported_plugins(self.app_root)
+        except Exception as exc:
+            self.plugin_manager.set_enabled(plugin_id, False)
+            messagebox.showerror("Plugin failed to load", str(exc))
+            return
+
+    def _import_plugin_zip(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Import a Nexa plugin package",
+            filetypes=[("Nexa plugin ZIP", "*.zip"), ("All files", "*.*")],
+        )
+        if not selected:
+            return
+        try:
+            plugin_id = self.plugin_manager.import_plugin_zip(Path(selected))
+            messagebox.showinfo("Plugin imported", f"Plugin '{plugin_id}' was imported and is disabled by default. Open Plugin Manager to enable it.")
+        except Exception as exc:
+            messagebox.showerror("Plugin import failed", str(exc))
+
     def _append_message(self, name: str, text: str, role: str) -> None:
         self.chat.configure(state="normal")
         tag = "name_user" if role == "user" else "name_ai"
@@ -219,15 +465,19 @@ class NexaDesktop:
             exe = self.runtime_dir / "llama-server.exe"
             if not exe.is_file():
                 raise FileNotFoundError(f"Built-in inference runtime is missing: {exe}")
-            if not self.model_path.is_file():
-                raise FileNotFoundError(f"The bundled AI model is missing: {self.model_path}")
+            if not self.active_model_path.is_file():
+                raise FileNotFoundError(f"The selected local AI model is missing: {self.active_model_path}")
             threads = max(2, min(6, (os.cpu_count() or 4)))
             cmd = [
-                str(exe), "-m", str(self.model_path),
+                str(exe), "-m", str(self.active_model_path),
                 "--host", "127.0.0.1", "--port", str(LOCAL_MODEL_PORT),
                 "-c", "4096", "-t", str(threads), "--parallel", "1",
-                "--alias", MODEL_ID, "--no-webui", "--offline",
+                "--alias", self.current_model_id, "--no-webui", "--offline",
             ]
+            if self.active_mmproj_path:
+                if not self.active_mmproj_path.is_file():
+                    raise FileNotFoundError(f"The vision projector is missing: {self.active_mmproj_path}")
+                cmd.extend(["--mmproj", str(self.active_mmproj_path)])
             self.llama_process = subprocess.Popen(
                 cmd, cwd=str(self.runtime_dir), stdin=subprocess.DEVNULL,
                 stdout=self.log_handle, stderr=subprocess.STDOUT,
@@ -236,16 +486,17 @@ class NexaDesktop:
             if not self._wait_for_url(f"http://127.0.0.1:{LOCAL_MODEL_PORT}/health", 360):
                 raise RuntimeError("The built-in AI model did not become ready. See the runtime log for details.")
 
-            from nexa_ai.config import settings
-            import uvicorn
-            from nexa_ai.api import app
+            if self.api_server is None:
+                from nexa_ai.config import settings
+                import uvicorn
+                from nexa_ai.api import app
 
-            config = uvicorn.Config(app, host=settings.host, port=settings.port, log_level="error", access_log=False)
-            self.api_server = uvicorn.Server(config)
-            self.api_thread = threading.Thread(target=self.api_server.run, daemon=True, name="NexaLocalAPI")
-            self.api_thread.start()
-            if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
-                raise RuntimeError("Nexa AI local API could not start. Port 8000 may already be in use.")
+                config = uvicorn.Config(app, host=settings.host, port=settings.port, log_level="error", access_log=False)
+                self.api_server = uvicorn.Server(config)
+                self.api_thread = threading.Thread(target=self.api_server.run, daemon=True, name="NexaLocalAPI")
+                self.api_thread.start()
+                if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
+                    raise RuntimeError("Nexa AI local API could not start. Port 8000 may already be in use.")
             self.events.put(("ready", None))
         except Exception as exc:
             self.events.put(("boot_error", str(exc)))
@@ -325,7 +576,7 @@ class NexaDesktop:
         path = filedialog.askopenfilename(
             title="Attach a local document",
             filetypes=[
-                ("Supported documents", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log"),
+                ("Supported files", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log *.png *.jpg *.jpeg *.webp *.bmp *.mp3 *.wav *.m4a *.flac *.ogg *.mp4 *.mkv *.mov *.avi"),
                 ("All files", "*.*"),
             ],
         )
@@ -382,7 +633,7 @@ class NexaDesktop:
         answer: list[str] = []
         try:
             payload = {
-                "model": MODEL_ID, "messages": self.messages, "stream": True,
+                "model": self.current_model_id, "messages": self.messages, "stream": True,
                 "temperature": 0.7, "max_tokens": 1536,
             }
             with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
