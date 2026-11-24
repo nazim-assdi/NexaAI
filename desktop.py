@@ -153,9 +153,9 @@ class NexaDesktop:
         )
         style.configure(
             "Accent.TButton", font=("Segoe UI Semibold", 10), padding=(16, 9),
-            background=self.ACCENT, foreground="#08101f", borderwidth=0,
+            background=self.ACCENT, foreground=self.THEMES[self.theme_name]["BUTTON_TEXT"], borderwidth=0,
         )
-        style.map("Accent.TButton", background=[("active", "#8bb2ff"), ("disabled", "#40577e")])
+        style.map("Accent.TButton", background=[("active", self.THEMES[self.theme_name]["ACTIVE"]), ("disabled", self.PANEL_2)])
 
         shell = tk.Frame(self.root, bg=self.BG)
         shell.pack(fill="both", expand=True)
@@ -287,7 +287,9 @@ class NexaDesktop:
         self._retheme_widget(self.root, colour_map)
         self.root.configure(bg=self.BG)
         self.ttk_style.configure("Nexa.TButton", background=self.PANEL_2, foreground=self.TEXT)
+        self.ttk_style.map("Nexa.TButton", background=[("active", new_palette["ACTIVE"]), ("disabled", self.PANEL)])
         self.ttk_style.configure("Accent.TButton", background=self.ACCENT, foreground=new_palette["BUTTON_TEXT"])
+        self.ttk_style.map("Accent.TButton", background=[("active", new_palette["ACTIVE"]), ("disabled", self.PANEL_2)])
         self.ttk_style.configure("TCombobox", fieldbackground=self.PANEL_2, background=self.PANEL_2, foreground=self.TEXT)
         self.chat.tag_configure("name_user", foreground=new_palette["USER"])
         self.chat.tag_configure("name_ai", foreground=new_palette["AI"])
@@ -410,12 +412,16 @@ class NexaDesktop:
             row.pack(fill="x", padx=4, pady=5)
             line = tk.Frame(row, bg=self.PANEL)
             line.pack(fill="x", padx=12, pady=(9, 2))
-            variable = tk.BooleanVar(value=item["enabled"])
-            check = ttk.Checkbutton(
-                line, text=item["name"], variable=variable,
-                command=lambda pid=item["id"], var=variable: self._toggle_plugin(pid, var.get()),
-            )
-            check.pack(side="left")
+            if item.get("kind") == "imported extension":
+                variable = tk.BooleanVar(value=item["enabled"])
+                check = ttk.Checkbutton(
+                    line, text=item["name"], variable=variable,
+                    command=lambda pid=item["id"], var=variable: self._toggle_plugin(pid, var.get()),
+                )
+                check.pack(side="left")
+            else:
+                tk.Label(line, text=item["name"], bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10)).pack(side="left")
+                tk.Label(line, text="Optional pack", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="left", padx=10)
             tk.Label(line, text=item.get("status", ""), bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
             tk.Label(row, text=item["description"], bg=self.PANEL, fg=self.TEXT, font=("Segoe UI", 9), wraplength=750, justify="left").pack(anchor="w", padx=14, pady=(2, 4))
             tk.Label(row, text=f"Requires: {item['requires']}", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8), wraplength=750, justify="left").pack(anchor="w", padx=14, pady=(0, 9))
