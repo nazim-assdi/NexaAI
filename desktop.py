@@ -149,7 +149,7 @@ class NexaDesktop:
         )
         style.map(
             "Nexa.TButton",
-            background=[("active", "#263a5c"), ("disabled", "#1a2438")],
+            background=[("active", self.THEMES[self.theme_name]["ACTIVE"]), ("disabled", self.PANEL)],
             foreground=[("disabled", "#61708a")],
         )
         style.configure(
@@ -294,6 +294,8 @@ class NexaDesktop:
         self.ttk_style.configure("TCombobox", fieldbackground=self.PANEL_2, background=self.PANEL_2, foreground=self.TEXT)
         self.chat.tag_configure("name_user", foreground=new_palette["USER"])
         self.chat.tag_configure("name_ai", foreground=new_palette["AI"])
+        self.chat.tag_configure("body", foreground=self.TEXT)
+        self.chat.tag_configure("meta", foreground=self.MUTED)
         self.theme_name = selected
         self._save_preferences()
 
@@ -433,16 +435,52 @@ class NexaDesktop:
         footer = tk.Frame(window, bg=self.BG)
         footer.pack(fill="x", padx=20, pady=(5, 18))
         ttk.Button(footer, text="Import plugin ZIP…", style="Nexa.TButton", command=self._import_plugin_zip).pack(side="left")
-        tk.Label(footer, text="Imported plugin code runs only after you enable it. Import extensions you trust.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), wraplength=450).pack(side="left", padx=12)
+        ttk.Button(footer, text="Run plugin command…", style="Accent.TButton", command=self._run_plugin_command).pack(side="right")
+        tk.Label(footer, text="Imported code runs only after you enable it. Import extensions you trust.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), wraplength=430).pack(side="left", padx=12)
 
     def _toggle_plugin(self, plugin_id: str, enabled: bool) -> None:
         self.plugin_manager.set_enabled(plugin_id, enabled)
         try:
-            self.plugin_manager.load_enabled_imported_plugins(self.app_root)
+            context = self.plugin_manager.load_enabled_imported_plugins(self.app_root)
+            if enabled:
+                messagebox.showinfo(
+                    "Plugin enabled",
+                    f"Plugin is enabled. Registered commands: {len(context.commands)}",
+                )
         except Exception as exc:
             self.plugin_manager.set_enabled(plugin_id, False)
             messagebox.showerror("Plugin failed to load", str(exc))
             return
+
+    def _run_plugin_command(self) -> None:
+        commands = dict(self.plugin_manager.commands)
+        if not commands:
+            messagebox.showinfo("No plugin commands", "Import and enable a plugin that registers at least one command.")
+            return
+        window = tk.Toplevel(self.root)
+        window.title("Run Plugin Command")
+        window.geometry("480x360")
+        window.configure(bg=self.BG)
+        tk.Label(window, text="Available plugin commands", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(anchor="w", padx=18, pady=(18, 8))
+        for name, handler in sorted(commands.items()):
+            row = tk.Frame(window, bg=self.PANEL)
+            row.pack(fill="x", padx=14, pady=4)
+            tk.Label(row, text=name, bg=self.PANEL, fg=self.TEXT, font=("Consolas", 9)).pack(side="left", padx=10, pady=8)
+            ttk.Button(
+                row, text="Run", style="Nexa.TButton",
+                command=lambda n=name, h=handler: self._execute_plugin_command(n, h),
+            ).pack(side="right", padx=8, pady=5)
+
+    def _execute_plugin_command(self, name: str, handler) -> None:
+        def worker() -> None:
+            try:
+                result = handler()
+                message = str(result)[:6000]
+                self.root.after(0, lambda: messagebox.showinfo(f"Plugin: {name}", message))
+            except Exception as exc:
+                self.root.after(0, lambda: messagebox.showerror(f"Plugin: {name}", str(exc)))
+
+        threading.Thread(target=worker, daemon=True, name=f"PluginCommand-{name}").start()
 
     def _import_plugin_zip(self) -> None:
         selected = filedialog.askopenfilename(
