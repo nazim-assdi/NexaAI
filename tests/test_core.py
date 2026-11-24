@@ -14,6 +14,7 @@ from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
+from tools.smoke_test_runtime import build_smoke_payload
 
 
 class CoreTests(unittest.TestCase):
@@ -65,6 +66,12 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(_parse_content_range("bytes 0-0/2500000000"), (0, 0, 2500000000))
         self.assertIsNone(_parse_content_range("bytes */2500000000"))
         self.assertIsNone(_parse_content_range("bad-range"))
+
+    def test_qwen3_smoke_test_disables_reasoning_budget_for_health_check(self):
+        payload = build_smoke_payload()
+        self.assertEqual(payload["model"], "nexa-qwen3-4b")
+        self.assertEqual(payload["reasoning_effort"], "none")
+        self.assertGreaterEqual(payload["max_tokens"], 32)
 
     def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
         profiles = engine_profiles(cpu_count=4)
