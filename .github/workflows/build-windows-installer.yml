@@ -128,8 +128,8 @@ jobs:
       - name: Publish GitHub release with installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v1.0.0
-          name: Nexa AI Desktop v1.0.0 — Windows Offline Installer
+          tag_name: desktop-v1.1.0
+          name: Nexa AI Desktop v1.1.0 — Windows Offline Installer
           body: |
             Installable Windows x64 build of Nexa AI. The CPU inference runtime and Qwen2.5 1.5B Q4_K_M model are bundled in the installer. After installation, the app starts its local model itself and does not need Ollama, Python, command-line setup, an API key, or an internet connection for local chat.
 
