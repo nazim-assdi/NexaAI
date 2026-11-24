@@ -20,6 +20,21 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "ram": "Works best on 8 GB RAM",
         "source": "Bundled with Nexa AI",
     },
+    "qwen3-4b": {
+        "id": "nexa-qwen3-4b",
+        "name": "Qwen3 4B Instruct Q4_K_M",
+        "description": "⭐ Recommended all-rounder for Bangla/English chat, coding, JSON, tool/function calling and n8n workflow design.",
+        "role": "All-rounder",
+        "size_label": "About 2.5 GB",
+        "minimum_bytes": 2_300_000_000,
+        "filename": "Qwen3-4B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+        "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+        "ram": "Best single model for this app; use 4K context on 8 GB RAM and close heavy apps",
+        "source": "Hugging Face · Qwen official",
+        "license": "Apache-2.0",
+        "recommended": True,
+    },
     "qwen2.5-coder-1.5b": {
         "id": "nexa-qwen2.5-coder-1.5b",
         "name": "Qwen 2.5 Coder 1.5B",
@@ -104,12 +119,14 @@ def _download_one(
     minimum_bytes: int,
     progress: Callable[[str, int, int], None] | None = None,
     label: str = "model",
+    expected_sha256: str | None = None,
 ) -> None:
     partial = destination.with_suffix(destination.suffix + ".partial")
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial.unlink(missing_ok=True)
     downloaded = 0
     expected = 0
+    digest = hashlib.sha256()
     try:
         with httpx.Client(follow_redirects=True, timeout=httpx.Timeout(1200, connect=30)) as client:
             with client.stream("GET", url) as response:
@@ -123,12 +140,18 @@ def _download_one(
                         if not chunk:
                             continue
                         output.write(chunk)
+                        digest.update(chunk)
                         downloaded += len(chunk)
                         if progress:
                             progress(label, downloaded, expected)
         if downloaded < minimum_bytes:
             raise RuntimeError(
                 f"Downloaded file is incomplete ({downloaded:,} bytes; expected at least {minimum_bytes:,})."
+            )
+        actual_sha256 = digest.hexdigest().lower()
+        if expected_sha256 and actual_sha256 != expected_sha256.lower():
+            raise RuntimeError(
+                f"Model checksum verification failed. Expected {expected_sha256}, got {actual_sha256}."
             )
         partial.replace(destination)
     except Exception:
@@ -153,7 +176,10 @@ def download_model(
         raise RuntimeError("Model target path could not be created.")
 
     if not model_path.exists() or model_path.stat().st_size < item["minimum_bytes"]:
-        _download_one(item["url"], model_path, item["minimum_bytes"], progress, item["name"])
+        _download_one(
+            item["url"], model_path, item["minimum_bytes"], progress, item["name"],
+            expected_sha256=item.get("sha256"),
+        )
 
     if mmproj_path:
         if not mmproj_path.exists() or mmproj_path.stat().st_size < item["mmproj_minimum_bytes"]:
