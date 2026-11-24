@@ -19,3 +19,8 @@ Nexa AI bundles third-party software and model weights for local-only inference.
    - SmolLM2-1.7B-Instruct-GGUF (bartowski): upstream model license Apache-2.0
    - Qwen2.5-VL-3B-Instruct-GGUF (ggml-org), including mmproj: Apache-2.0
    Optional weights are fetched from the linked upstream Hugging Face repositories by the in-app Model Library and are not bundled in the default installer.
+
+5. imageio-ffmpeg
+   Project: https://github.com/imageio/imageio-ffmpeg
+   License: BSD 2-Clause
+   The Windows wheel includes an FFmpeg executable obtained from upstream builds. FFmpeg's own licence depends on the options enabled in the binary; see https://ffmpeg.org/legal.html and the upstream build metadata. The executable's licence/version can be inspected with its `-L` option.
