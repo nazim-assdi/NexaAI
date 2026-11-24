@@ -42,8 +42,8 @@ The Model Library verifies this SHA-256 during download. Once installed, Qwen3 r
 
 Press **Voice chat**, speak into your microphone, then press **Stop & send**.
 
-- Speech recognition uses multilingual **faster-whisper small** locally on the CPU.
-- The first voice-chat use downloads the speech model (roughly 500 MB). Later transcription is offline.
+- Speech recognition uses multilingual **faster-whisper base** locally on the CPU (multilingual, int8).
+- The first voice-chat use downloads the speech model (roughly 150 MB). Later transcription is offline.
 - After transcription, the recognized text is sent to the active local language model.
 - **Speak voice-chat replies** uses Windows SAPI speech voices locally; no cloud TTS is used.
 - Bengali speech output depends on whether a Bengali SAPI voice is installed in Windows. If not, Windows may use its default voice, which may pronounce Bangla poorly.
