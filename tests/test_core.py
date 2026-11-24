@@ -39,11 +39,24 @@ class CoreTests(unittest.TestCase):
     def test_image_attachment_requires_vision_model(self):
         with tempfile.TemporaryDirectory() as folder:
             image_path = Path(folder) / "sample.png"
-            image_path.write_bytes(b"not-decoded-because-vision-is-disabled")
+            image_path.write_bytes(b"image-bytes")
             stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
             with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": ""}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
                 with self.assertRaisesRegex(RuntimeError, "Qwen2.5-VL"):
                     prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
+
+    def test_image_attachment_becomes_local_data_uri_with_vision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image_path = Path(folder) / "sample.png"
+            image_path.write_bytes(b"fake-image-content")
+            mmproj = Path(folder) / "mmproj.gguf"
+            mmproj.write_bytes(b"local-projector")
+            stored = StoredFile("image-2", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
+            with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": str(mmproj)}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
+                result = prepare_messages([{"role": "user", "content": [{"type": "text", "text": "Describe it"}, {"type": "input_file", "file_id": "image-2"}]}])
+            image_parts = [part for part in result[0]["content"] if part.get("type") == "image_url"]
+            self.assertEqual(len(image_parts), 1)
+            self.assertTrue(image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,"))
 
     def test_plugin_toggle_persists(self):
         with tempfile.TemporaryDirectory() as folder:
