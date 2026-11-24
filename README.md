@@ -19,7 +19,7 @@ Included model catalogue:
 - **Qwen2.5 1.5B Instruct** — bundled general-purpose model.
 - **Qwen2.5 Coder 1.5B Instruct Q4_K_M** — optional coding model.
 - **SmolLM2 1.7B Instruct Q4_K_M** — optional compact general-purpose model.
-- **Qwen2.5-VL 3B Q4_K_M + mmproj** — optional image/vision model pack. This is much larger and may exceed comfortable memory use on an 8 GB PC.
+- **Qwen2.5-VL 3B Q4_K_M + mmproj** — optional image/vision model pack. This is much larger and may exceed comfortable memory use on an 8 GB PC. It is used for local image understanding and sampled video-frame analysis.
 
 Optional model downloads require internet once. They are stored under `%LOCALAPPDATA%\NexaAI\models`; afterwards, model loading is local.
 
@@ -27,13 +27,13 @@ Optional model downloads require internet once. They are stored under `%LOCALAPP
 
 Open **Plugin Manager** from the left panel.
 
-The built-in catalogue documents planned/local capability packs for:
-- Vision and video understanding
-- Offline audio transcription
-- Bangla and English OCR
-- Offline image generation
-- Motion-video clip creation
-- Advanced AI video generation (requires high-end hardware and large models)
+The built-in catalogue documents capability packs for:
+- Vision and video understanding (image input and up to six sampled frames from a video; about one frame every eight seconds)
+- Offline audio transcription (catalogue entry; runtime/model pack still required)
+- Bangla and English OCR (catalogue entry; runtime/language pack still required)
+- Offline image generation (catalogue entry; runtime/model pack still required)
+- Motion-video clip creation (catalogue entry; FFmpeg workflow still required)
+- Advanced AI video generation (requires high-end hardware and large models; not part of this build)
 
 These catalogue cards describe requirements; a card is not a claim that its optional runtime/model pack is already installed. Nexa also supports importing third-party plugin ZIP packages. Imported plugins must contain a `plugin.json` manifest and a Python entrypoint that defines `register(context)`. Imported plugin code is disabled until explicitly enabled by the user. Only import code from developers you trust.
 
