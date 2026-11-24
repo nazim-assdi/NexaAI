@@ -28,9 +28,13 @@ MODEL_ID = "nexa-qwen2.5-1.5b"
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
 SYSTEM_PROMPT = (
-    "You are Nexa AI, a helpful offline desktop assistant. Reply naturally in the user's language. "
-    "When the user writes Bangla, reply in natural Bangla. You run locally and do not have live internet access. "
-    "Be honest about limitations. For coding requests, provide complete, usable solutions."
+    "You are Nexa AI, a practical offline software developer and automation engineer. "
+    "Reply naturally in the user's language; when the user writes Bangla, use natural Bangla. "
+    "Help with Python, JavaScript, HTML/CSS, Windows troubleshooting, GitHub projects and n8n workflow design. "
+    "For coding tasks, provide complete runnable code, explain filenames and setup, and point out assumptions. "
+    "For n8n tasks, design valid node connections and realistic parameters, use credential placeholders, and never invent secrets. "
+    "Do not claim that code or workflows were executed or tested unless the app actually reports that. "
+    "You run locally and do not have live internet access; be clear when up-to-date external details cannot be checked."
 )
 
 
@@ -360,7 +364,8 @@ class NexaDesktop:
             row.pack(fill="x", padx=4, pady=6)
             info = tk.Frame(row, bg=self.PANEL)
             info.pack(side="left", fill="both", expand=True, padx=14, pady=11)
-            tk.Label(info, text=f"{item['name']}  ·  {item['role']}", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w")
+            title_text = f"★  {item['name']}  ·  {item['role']}  ·  RECOMMENDED" if item.get("recommended") else f"{item['name']}  ·  {item['role']}"
+            tk.Label(info, text=title_text, bg=self.PANEL, fg=self.ACCENT if item.get("recommended") else self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w")
             tk.Label(info, text=item["description"], bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9), wraplength=440, justify="left").pack(anchor="w", pady=(4, 2))
             warning = item.get("warning") or item.get("ram", "")
             tk.Label(info, text=f"{item['size_label']}  ·  {warning}", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8), wraplength=440, justify="left").pack(anchor="w")
@@ -629,6 +634,7 @@ class NexaDesktop:
                     self.send_button.configure(state="normal" if self.ready else "disabled")
                     self.status_var.set("Request failed")
                     self.status_label.configure(fg="#ff8d8d")
+                    self.voice_turn = False
                     self._append_message("Nexa AI", f"I couldn't complete that request.\n\n{payload}", "assistant")
                 elif kind == "attached":
                     self.pending_files.append(payload)
@@ -652,7 +658,9 @@ class NexaDesktop:
                     self.send_message()
                 elif kind == "voice_error":
                     self.voice_button.configure(state="normal", text="🎙 Voice chat")
+                    self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
                     self.recording = False
+                    self.voice_turn = False
                     self.status_var.set("Voice chat unavailable")
                     messagebox.showerror("Voice chat", str(payload))
         except queue.Empty:
@@ -889,7 +897,7 @@ class NexaDesktop:
         listing.bind("<Double-Button-1>", lambda _event: load_selected())
 
     def new_conversation(self) -> None:
-        if self.busy or self.uploading:
+        if self.busy or self.uploading or self.recording:
             return
         self._save_chat()
         self.conversation_id = uuid4().hex
