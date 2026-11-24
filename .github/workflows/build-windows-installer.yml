@@ -39,8 +39,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $url = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_TAG/llama-$env:LLAMA_CPP_TAG-bin-win-cpu-x64.zip"
-          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\llama-runtime.zip"
+          Invoke-WebRequest -Uri $env:LLAMA_RUNTIME_URL -OutFile "$env:RUNNER_TEMP\llama-runtime.zip"
+          $runtimeHash = (Get-FileHash "$env:RUNNER_TEMP\llama-runtime.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($runtimeHash -ne $env:LLAMA_RUNTIME_SHA256) { throw "llama.cpp runtime SHA256 verification failed." }
           Expand-Archive -LiteralPath "$env:RUNNER_TEMP\llama-runtime.zip" -DestinationPath "$env:RUNNER_TEMP\llama-runtime" -Force
           $server = Get-ChildItem -Path "$env:RUNNER_TEMP\llama-runtime" -Filter "llama-server.exe" -Recurse | Select-Object -First 1
           if (-not $server) { throw "llama-server.exe was not found in the official runtime archive." }
