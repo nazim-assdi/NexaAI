@@ -33,10 +33,10 @@ class CoreTests(unittest.TestCase):
         messages = [{"role": "user", "content": "hello"}]
         self.assertEqual(prepare_messages(messages), messages)
 
-    def test_model_catalog_contains_multiple_roles(self):
-        roles = {item["role"] for item in MODEL_CATALOG.values()}
-        self.assertTrue({"Chat", "Coding", "Vision", "All-rounder"}.issubset(roles))
-        self.assertIn("mmproj_filename", MODEL_CATALOG["qwen2.5-vl-3b"])
+    def test_model_catalog_contains_only_qwen3_4b(self):
+        self.assertEqual(set(MODEL_CATALOG), {"qwen3-4b"})
+        self.assertEqual(MODEL_CATALOG["qwen3-4b"]["id"], "nexa-qwen3-4b")
+        self.assertEqual(MODEL_CATALOG["qwen3-4b"]["filename"], "Qwen3-4B-Q4_K_M.gguf")
 
     def test_qwen3_is_recommended_and_checksum_pinned(self):
         qwen = MODEL_CATALOG["qwen3-4b"]
@@ -50,21 +50,8 @@ class CoreTests(unittest.TestCase):
             image_path.write_bytes(b"image-bytes")
             stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
             with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": ""}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
-                with self.assertRaisesRegex(RuntimeError, "Qwen2.5-VL"):
+                with self.assertRaisesRegex(RuntimeError, "Qwen3 4B"):
                     prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
-
-    def test_image_attachment_becomes_local_data_uri_with_vision(self):
-        with tempfile.TemporaryDirectory() as folder:
-            image_path = Path(folder) / "sample.png"
-            image_path.write_bytes(b"fake-image-content")
-            mmproj = Path(folder) / "mmproj.gguf"
-            mmproj.write_bytes(b"local-projector")
-            stored = StoredFile("image-2", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
-            with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": str(mmproj)}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
-                result = prepare_messages([{"role": "user", "content": [{"type": "text", "text": "Describe it"}, {"type": "input_file", "file_id": "image-2"}]}])
-            image_parts = [part for part in result[0]["content"] if part.get("type") == "image_url"]
-            self.assertEqual(len(image_parts), 1)
-            self.assertTrue(image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,"))
 
     def test_plugin_toggle_persists(self):
         with tempfile.TemporaryDirectory() as folder:

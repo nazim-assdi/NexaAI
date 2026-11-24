@@ -108,20 +108,16 @@ async def upload_file(file: UploadFile = File(...)):
     filename = Path(file.filename or "upload.bin").name
     mime_type = guess_mime_type(filename, file.content_type)
     suffix = Path(filename).suffix.lower()
-    image_types = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
-    video_types = {"video/mp4", "video/x-matroska", "video/quicktime", "video/x-msvideo", "video/webm"}
     text_extensions = {".txt", ".md", ".csv", ".json", ".xml", ".py", ".js", ".html", ".css", ".log"}
-    media_extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".mp4", ".mkv", ".mov", ".avi", ".webm"}
     allowed = (
         mime_type.startswith("text/")
         or mime_type in {"application/pdf", "application/json", "application/xml", "application/javascript", "application/csv"}
-        or mime_type in image_types or mime_type in video_types
-        or suffix in text_extensions or suffix in media_extensions
+        or suffix in text_extensions
     )
     if not allowed:
         raise HTTPException(
             status_code=415,
-            detail="Supported attachments: selectable-text PDF, text/code files, images and videos. Images/videos require the Qwen2.5-VL model.",
+            detail="This single-model edition supports selectable-text PDFs and text/code files. Images and videos are not supported by the Qwen3 4B text model.",
         )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

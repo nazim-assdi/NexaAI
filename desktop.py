@@ -17,14 +17,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from nexa_ai.model_library import MODEL_CATALOG, model_is_installed, model_paths, download_model
+from nexa_ai.model_library import QWEN3_MODEL_KEY, QWEN3_MODEL_ID, QWEN3_MODEL_NAME, QWEN3_MODEL_FILENAME, model_is_installed, download_model
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.2.0"
-MODEL_ID = "nexa-qwen2.5-1.5b"
+APP_VERSION = "1.3.0"
+MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
 SYSTEM_PROMPT = (
@@ -52,7 +52,7 @@ def app_data_dir() -> Path:
 
 def configure_environment() -> tuple[Path, Path, Path]:
     runtime_dir = resource_path("runtime")
-    model_path = resource_path("models/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    model_path = app_data_dir() / "models" / QWEN3_MODEL_FILENAME
     data_dir = app_data_dir() / "Data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,12 +122,11 @@ class NexaDesktop:
         self.theme_name = self._load_theme_preference()
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
-        self.current_model_key = "qwen2.5-1.5b"
+        self.current_model_key = QWEN3_MODEL_KEY
         self.current_model_id = MODEL_ID
-        self.current_model_name = "Qwen 2.5 · 1.5B Q4"
+        self.current_model_name = QWEN3_MODEL_NAME
         self.active_model_path = self.model_path
         self.active_mmproj_path: Path | None = None
-        self._restore_model_preference()
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
         self.llama_process: subprocess.Popen | None = None
@@ -148,10 +147,10 @@ class NexaDesktop:
         self._build_ui()
         self._append_message(
             "Nexa AI",
-            "Starting your built-in offline model. The first startup may take a little while as the model loads into memory.",
+            "NexaAI uses one assistant model: Qwen3 4B Q4_K_M. On first launch it downloads the model (about 2.5 GB); after that, chat, coding and n8n work offline.",
             "assistant",
         )
-        self.status_var.set("Starting local AI engine…")
+        self.status_var.set("Preparing Qwen3 4B · checking local model…")
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaBoot").start()
         self.root.after(100, self._poll_events)
 
@@ -205,10 +204,6 @@ class NexaDesktop:
             sidebar, text="⚙   n8n Workflow Studio", style="Nexa.TButton",
             command=self.open_n8n_studio,
         ).pack(fill="x", padx=14, pady=(0, 10))
-        ttk.Button(
-            sidebar, text="◈   Model Library", style="Nexa.TButton",
-            command=self.open_model_library,
-        ).pack(fill="x", padx=14, pady=4)
         ttk.Button(
             sidebar, text="▦   Plugin Manager", style="Nexa.TButton",
             command=self.open_plugin_manager,
@@ -341,129 +336,14 @@ class NexaDesktop:
         for child in widget.winfo_children():
             self._retheme_widget(child, colour_map)
 
-    def _restore_model_preference(self) -> None:
-        try:
-            prefs = json.loads(self.preferences_path.read_text(encoding="utf-8"))
-            model_key = str(prefs.get("model", ""))
-            if model_key not in MODEL_CATALOG or not model_is_installed(model_key, self.app_root, self.model_path):
-                return
-            item = MODEL_CATALOG[model_key]
-            model_path, mmproj_path = model_paths(model_key, self.app_root, self.model_path)
-            if not model_path:
-                return
-            self.current_model_key = model_key
-            self.current_model_id = item["id"]
-            self.current_model_name = item["name"]
-            self.active_model_path = model_path
-            self.active_mmproj_path = mmproj_path
-            os.environ["NEXA_MODEL"] = self.current_model_id
-            if mmproj_path:
-                os.environ["NEXA_MM_PROJ_PATH"] = str(mmproj_path)
-            else:
-                os.environ.pop("NEXA_MM_PROJ_PATH", None)
-        except (OSError, ValueError, TypeError, KeyError):
-            return
-
     def _save_preferences(self) -> None:
         try:
-            payload = {
-                "theme": self.theme_name,
-                "model": self.current_model_key,
-            }
+            payload = {"theme": self.theme_name}
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.preferences_path)
         except OSError:
             pass
-
-    def open_model_library(self) -> None:
-        window = tk.Toplevel(self.root)
-        window.title("Nexa AI · Model Library")
-        window.geometry("760x640")
-        window.configure(bg=self.BG)
-        tk.Label(window, text="Local Model Library", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 18)).pack(anchor="w", padx=22, pady=(20, 4))
-        tk.Label(window, text="Download optional models once, then switch between them without internet.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=22, pady=(0, 14))
-        body = tk.Frame(window, bg=self.BG)
-        body.pack(fill="both", expand=True, padx=16, pady=(0, 18))
-
-        for key, item in MODEL_CATALOG.items():
-            row = tk.Frame(body, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
-            row.pack(fill="x", padx=4, pady=6)
-            info = tk.Frame(row, bg=self.PANEL)
-            info.pack(side="left", fill="both", expand=True, padx=14, pady=11)
-            title_text = f"★  {item['name']}  ·  {item['role']}  ·  RECOMMENDED" if item.get("recommended") else f"{item['name']}  ·  {item['role']}"
-            tk.Label(info, text=title_text, bg=self.PANEL, fg=self.ACCENT if item.get("recommended") else self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w")
-            tk.Label(info, text=item["description"], bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9), wraplength=440, justify="left").pack(anchor="w", pady=(4, 2))
-            warning = item.get("warning") or item.get("ram", "")
-            tk.Label(info, text=f"{item['size_label']}  ·  {warning}", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8), wraplength=440, justify="left").pack(anchor="w")
-            controls = tk.Frame(row, bg=self.PANEL)
-            controls.pack(side="right", padx=12, pady=10)
-            state_text = "Bundled" if item.get("bundled") else ("Installed" if model_is_installed(key, self.app_root, self.model_path) else "Not installed")
-            state = tk.Label(controls, text=state_text, bg=self.PANEL, fg="#8fbd92" if state_text in ("Bundled", "Installed") else self.MUTED, font=("Segoe UI", 8))
-            state.pack(pady=(0, 6))
-            if state_text == "Not installed":
-                button = ttk.Button(controls, text="Download", style="Nexa.TButton")
-                button.configure(command=lambda k=key, b=button, s=state: self._download_model_from_library(k, b, s, window))
-                button.pack(fill="x")
-            elif key != self.current_model_key:
-                ttk.Button(controls, text="Use model", style="Accent.TButton", command=lambda k=key, w=window: self._activate_model(k, w)).pack(fill="x")
-            else:
-                ttk.Label(controls, text="Active", style="Nexa.TButton").pack(fill="x")
-
-    def _download_model_from_library(self, model_key: str, button: ttk.Button, state: tk.Label, parent: tk.Toplevel) -> None:
-        button.configure(state="disabled", text="Downloading…")
-        state.configure(text="Preparing download…", fg=self.ACCENT)
-
-        def worker() -> None:
-            try:
-                def progress(label: str, done: int, total: int) -> None:
-                    percent = f"{done / total * 100:.0f}%" if total else f"{done / (1024 * 1024):.0f} MB"
-                    self.root.after(0, lambda p=percent, s=state, n=label: s.configure(text=f"{n}: {p}"))
-
-                download_model(model_key, self.app_root, self.model_path, progress)
-                self.root.after(0, lambda: (button.configure(state="normal", text="Use model"), state.configure(text="Installed", fg="#8fbd92"), button.configure(command=lambda k=model_key, w=parent: self._activate_model(k, w))))
-            except Exception as exc:
-                self.root.after(0, lambda e=str(exc): (button.configure(state="normal", text="Retry"), state.configure(text="Download failed", fg="#dd8d85"), messagebox.showerror("Model download failed", e, parent=parent), button.configure(command=lambda k=model_key, b=button, s=state, w=parent: self._download_model_from_library(k, b, s, w))))
-
-        threading.Thread(target=worker, daemon=True, name=f"ModelDownload-{model_key}").start()
-
-    def _activate_model(self, model_key: str, parent: tk.Toplevel | None = None) -> None:
-        if self.busy or self.uploading:
-            messagebox.showinfo("Model is busy", "Wait until the current task finishes before switching models.", parent=parent)
-            return
-        if not model_is_installed(model_key, self.app_root, self.model_path):
-            messagebox.showwarning("Model not installed", "Download this model from the Model Library first.", parent=parent)
-            return
-        item = MODEL_CATALOG[model_key]
-        model_path, mmproj_path = model_paths(model_key, self.app_root, self.model_path)
-        if not model_path:
-            messagebox.showerror("Model unavailable", "The selected model file could not be found.", parent=parent)
-            return
-        if self.llama_process and self.llama_process.poll() is None:
-            self.llama_process.terminate()
-            try:
-                self.llama_process.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                self.llama_process.kill()
-        self.current_model_key = model_key
-        self.current_model_id = item["id"]
-        self.current_model_name = item["name"]
-        self.active_model_path = model_path
-        self.active_mmproj_path = mmproj_path
-        os.environ["NEXA_MODEL"] = self.current_model_id
-        if mmproj_path:
-            os.environ["NEXA_MM_PROJ_PATH"] = str(mmproj_path)
-        else:
-            os.environ.pop("NEXA_MM_PROJ_PATH", None)
-        self.model_name_var.set(item["name"])
-        self.ready = False
-        self.send_button.configure(state="disabled")
-        self.status_var.set(f"Loading {item['name']}…")
-        self.status_label.configure(fg=self.ACCENT)
-        self._save_preferences()
-        if parent:
-            parent.destroy()
-        threading.Thread(target=self._boot_engine, daemon=True, name="NexaModelSwitch").start()
 
     def open_plugin_manager(self) -> None:
         window = tk.Toplevel(self.root)
@@ -575,8 +455,22 @@ class NexaDesktop:
             exe = self.runtime_dir / "llama-server.exe"
             if not exe.is_file():
                 raise FileNotFoundError(f"Built-in inference runtime is missing: {exe}")
+            if not model_is_installed(QWEN3_MODEL_KEY, self.app_root, self.model_path):
+                self.events.put(("model_download_status", "First setup: downloading Qwen3 4B Q4_K_M · about 2.5 GB · internet required"))
+                last_progress = 0.0
+
+                def report_progress(_label: str, done: int, total: int) -> None:
+                    nonlocal last_progress
+                    now = time.monotonic()
+                    if now - last_progress >= 0.4 or (total and done >= total):
+                        last_progress = now
+                        self.events.put(("model_download_progress", (done, total)))
+
+                self.active_model_path, _ = download_model(
+                    QWEN3_MODEL_KEY, self.app_root, self.model_path, report_progress
+                )
             if not self.active_model_path.is_file():
-                raise FileNotFoundError(f"The selected local AI model is missing: {self.active_model_path}")
+                raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
             threads = max(2, min(4, (os.cpu_count() or 4)))
             cmd = [
                 str(exe), "-m", str(self.active_model_path),
@@ -636,9 +530,22 @@ class NexaDesktop:
                     self.send_button.configure(state="normal")
                     self._append_message(
                         "Nexa AI",
-                        "I'm ready. Your AI model is running locally on this PC. You can disconnect from the internet and continue chatting. For stronger coding and n8n workflow design, open Model Library and download the recommended Qwen3 4B model once.",
+                        "Qwen3 4B is ready and running locally. This is the only assistant model used for chat, coding, reasoning and n8n workflow design. You can now disconnect from the internet.",
                         "assistant",
                     )
+                elif kind == "model_download_status":
+                    self.status_var.set(str(payload))
+                    self.status_label.configure(fg=self.ACCENT)
+                elif kind == "model_download_progress":
+                    done, total = payload
+                    if total:
+                        percent = done * 100 / total
+                        self.status_var.set(
+                            f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB"
+                        )
+                    else:
+                        self.status_var.set(f"Downloading Qwen3 4B · {done / (1024 ** 2):.0f} MB")
+                    self.status_label.configure(fg=self.ACCENT)
                 elif kind == "boot_error":
                     self.status_var.set("Offline engine failed to start")
                     self.status_label.configure(fg="#ff8d8d")
@@ -707,7 +614,7 @@ class NexaDesktop:
         path = filedialog.askopenfilename(
             title="Attach a local document",
             filetypes=[
-                ("Supported files", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log *.png *.jpg *.jpeg *.webp *.bmp *.mp4 *.mkv *.mov *.avi *.webm"),
+                ("Supported files", "*.pdf *.txt *.md *.csv *.json *.xml *.py *.js *.html *.css *.log"),
                 ("All files", "*.*"),
             ],
         )

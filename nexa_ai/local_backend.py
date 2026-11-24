@@ -54,8 +54,7 @@ def _require_vision_model() -> None:
     mmproj = os.environ.get("NEXA_MM_PROJ_PATH", "").strip()
     if not mmproj or not Path(mmproj).is_file():
         raise RuntimeError(
-            "Image/video understanding needs the Qwen2.5-VL model. Open Model Library, "
-            "download Qwen2.5-VL 3B, then select Use model."
+            "This NexaAI edition uses only Qwen3 4B Q4_K_M, a text-only model. Image and video understanding are not available in the single-model edition."
         )
 
 

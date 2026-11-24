@@ -1,82 +1,32 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Callable, Any
 
 import httpx
 
+QWEN3_MODEL_KEY = "qwen3-4b"
+QWEN3_MODEL_ID = "nexa-qwen3-4b"
+QWEN3_MODEL_NAME = "Qwen3 4B Instruct Q4_K_M"
+QWEN3_MODEL_FILENAME = "Qwen3-4B-Q4_K_M.gguf"
+
+# Exactly one local chat/coding/reasoning model is supported.
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
-    "qwen2.5-1.5b": {
-        "id": "nexa-qwen2.5-1.5b",
-        "name": "Qwen 2.5 1.5B Instruct",
-        "description": "Balanced everyday chat, Bangla and English assistance.",
-        "role": "Chat",
-        "size_label": "1.12 GB",
-        "minimum_bytes": 1_000_000_000,
-        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        "bundled": True,
-        "ram": "Works best on 8 GB RAM",
-        "source": "Bundled with Nexa AI",
-    },
-    "qwen3-4b": {
-        "id": "nexa-qwen3-4b",
-        "name": "Qwen3 4B Instruct Q4_K_M",
-        "description": "⭐ Recommended all-rounder for Bangla/English chat, coding, JSON, tool/function calling and n8n workflow design.",
-        "role": "All-rounder",
+    QWEN3_MODEL_KEY: {
+        "id": QWEN3_MODEL_ID,
+        "name": QWEN3_MODEL_NAME,
+        "description": "The only NexaAI assistant model for Bengali/English chat, coding, reasoning, JSON and n8n workflow design.",
+        "role": "All-in-one assistant",
         "size_label": "About 2.5 GB",
         "minimum_bytes": 2_300_000_000,
-        "filename": "Qwen3-4B-Q4_K_M.gguf",
+        "filename": QWEN3_MODEL_FILENAME,
         "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
         "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
-        "ram": "Best single model for this app; use 4K context on 8 GB RAM and close heavy apps",
+        "ram": "Use 4K context on 8 GB RAM and close heavy apps",
         "source": "Hugging Face · Qwen official",
         "license": "Apache-2.0",
         "recommended": True,
-    },
-    "qwen2.5-coder-1.5b": {
-        "id": "nexa-qwen2.5-coder-1.5b",
-        "name": "Qwen 2.5 Coder 1.5B",
-        "description": "A coding-focused model for Python, JavaScript and debugging.",
-        "role": "Coding",
-        "size_label": "About 1.0 GB",
-        "minimum_bytes": 900_000_000,
-        "filename": "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
-        "url": "https://huggingface.co/tensorblock/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
-        "ram": "Suitable for 8 GB RAM; one model loaded at a time",
-        "source": "Hugging Face · tensorblock",
-        "license": "Apache-2.0",
-    },
-    "smollm2-1.7b": {
-        "id": "nexa-smollm2-1.7b",
-        "name": "SmolLM2 1.7B Instruct",
-        "description": "A compact alternative for general English chat and summarization.",
-        "role": "Chat",
-        "size_label": "About 1.1 GB",
-        "minimum_bytes": 950_000_000,
-        "filename": "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
-        "url": "https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
-        "ram": "Suitable for 8 GB RAM; English-focused",
-        "source": "Hugging Face · bartowski",
-        "license": "Apache-2.0",
-    },
-    "qwen2.5-vl-3b": {
-        "id": "nexa-qwen2.5-vl-3b",
-        "name": "Qwen 2.5 VL 3B",
-        "description": "Image understanding; can also inspect sampled video frames when the video plugin is enabled.",
-        "role": "Vision",
-        "size_label": "About 2.8 GB (model + projector)",
-        "minimum_bytes": 1_800_000_000,
-        "filename": "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
-        "url": "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
-        "mmproj_filename": "mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf",
-        "mmproj_url": "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf",
-        "mmproj_minimum_bytes": 700_000_000,
-        "ram": "Heavy for 8 GB RAM; best with 12–16 GB",
-        "source": "Hugging Face · ggml-org",
-        "license": "Apache-2.0",
-        "warning": "Optional large vision model. Download only when image understanding is needed.",
     },
 }
 
@@ -87,30 +37,19 @@ def model_directory(data_root: Path) -> Path:
     return target
 
 
-def model_paths(model_key: str, data_root: Path, bundled_model: Path) -> tuple[Path | None, Path | None]:
+def model_paths(model_key: str, data_root: Path, bundled_model: Path | None = None) -> tuple[Path, None]:
     item = MODEL_CATALOG.get(model_key)
     if not item:
         raise KeyError(f"Unknown model: {model_key}")
-    if item.get("bundled"):
-        return bundled_model, None
-    folder = model_directory(data_root)
-    model_path = folder / item["filename"]
-    mmproj_path = folder / item["mmproj_filename"] if item.get("mmproj_filename") else None
-    return model_path, mmproj_path
+    return model_directory(data_root) / item["filename"], None
 
 
-def model_is_installed(model_key: str, data_root: Path, bundled_model: Path) -> bool:
+def model_is_installed(model_key: str, data_root: Path, bundled_model: Path | None = None) -> bool:
     item = MODEL_CATALOG.get(model_key)
     if not item:
         return False
-    if item.get("bundled"):
-        return bundled_model.is_file() and bundled_model.stat().st_size >= item["minimum_bytes"]
-    model_path, mmproj_path = model_paths(model_key, data_root, bundled_model)
-    if not model_path or not model_path.is_file() or model_path.stat().st_size < item["minimum_bytes"]:
-        return False
-    if mmproj_path:
-        return mmproj_path.is_file() and mmproj_path.stat().st_size >= item["mmproj_minimum_bytes"]
-    return True
+    model_path, _ = model_paths(model_key, data_root)
+    return model_path.is_file() and model_path.stat().st_size >= item["minimum_bytes"]
 
 
 def _download_one(
@@ -162,41 +101,20 @@ def _download_one(
 def download_model(
     model_key: str,
     data_root: Path,
-    bundled_model: Path,
+    bundled_model: Path | None = None,
     progress: Callable[[str, int, int], None] | None = None,
-) -> tuple[Path, Path | None]:
+) -> tuple[Path, None]:
     item = MODEL_CATALOG.get(model_key)
     if not item:
         raise KeyError(f"Unknown model: {model_key}")
-    if item.get("bundled"):
-        return bundled_model, None
-
-    model_path, mmproj_path = model_paths(model_key, data_root, bundled_model)
-    if not model_path:
-        raise RuntimeError("Model target path could not be created.")
-
-    if not model_path.exists() or model_path.stat().st_size < item["minimum_bytes"]:
+    model_path, _ = model_paths(model_key, data_root)
+    if not model_is_installed(model_key, data_root):
         _download_one(
             item["url"], model_path, item["minimum_bytes"], progress, item["name"],
             expected_sha256=item.get("sha256"),
         )
-
-    if mmproj_path:
-        if not mmproj_path.exists() or mmproj_path.stat().st_size < item["mmproj_minimum_bytes"]:
-            _download_one(
-                item["mmproj_url"], mmproj_path,
-                item["mmproj_minimum_bytes"], progress,
-                item["name"] + " vision projector",
-            )
-
-    return model_path, mmproj_path
+    return model_path, None
 
 
-def delete_model(model_key: str, data_root: Path, bundled_model: Path) -> None:
-    item = MODEL_CATALOG.get(model_key)
-    if not item or item.get("bundled"):
-        raise ValueError("The bundled default model cannot be removed.")
-    model_path, mmproj_path = model_paths(model_key, data_root, bundled_model)
-    for path in (model_path, mmproj_path):
-        if path:
-            path.unlink(missing_ok=True)
+def delete_model(model_key: str, data_root: Path, bundled_model: Path | None = None) -> None:
+    raise ValueError("Qwen3 4B is the only supported NexaAI model and cannot be removed from the app.")

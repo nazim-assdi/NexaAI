@@ -1,98 +1,82 @@
-# Nexa AI — Offline AI Desktop Assistant
+# Nexa AI — One-Model Offline Desktop Assistant
 
-Nexa AI is a Windows x64 desktop assistant with a local llama.cpp runtime. It is designed to work without Python, Ollama, a terminal, API keys, or cloud model APIs after setup and model downloads have completed.
+Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download `NexaAI-Setup-1.2.0-Windows-x64.exe`.
-3. Double-click the installer and finish setup.
-4. Launch Nexa AI from the Start Menu or Desktop shortcut.
+2. Download \`NexaAI-Setup-1.3.0-Windows-x64.exe\`.
+3. Install and launch Nexa AI.
+4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) and verifies its SHA-256. Keep the internet connection active until this finishes.
 
-The base installer includes the desktop app, the llama.cpp CPU runtime, and the compact Qwen2.5 1.5B fallback model. The stronger Qwen3 model and voice recognition model are downloaded inside the app on first use, then stored locally.
+The installer includes the desktop application and the llama.cpp Windows CPU runtime. The large Qwen3 model is downloaded into \`%LOCALAPPDATA%\\NexaAI\\models\`, avoiding a multi-gigabyte installer. Once downloaded, Qwen3 runs fully offline. No Ollama, Python installation, command-line setup, API key or cloud model subscription is required.
 
-## Recommended single model for coding and n8n
+## The only assistant model
 
-Open **Model Library** and download:
+**Qwen3 4B Instruct Q4_K_M**
 
-**Qwen3-4B-Instruct Q4_K_M** (about 2.5 GB).
-
-This is the recommended all-rounder for Bengali/English chat, code generation, Python, JavaScript, debugging, JSON, reasoning and automation planning. Qwen3 supports tool/function-calling formats and more than 100 languages. It is not a specialist n8n model, but one balanced local model is more useful here than switching between several narrow models.
-
-The app uses one model at a time and keeps the context at 4K tokens to reduce memory use. On an 8 GB RAM computer, especially one with memory reserved for integrated graphics, it can be slower and may need other applications closed. It is a small local model, not equivalent to a large cloud model.
-
-Model file:
-- Repository: https://huggingface.co/Qwen/Qwen3-4B-GGUF
-- Quantization: Q4_K_M
-- File: `Qwen3-4B-Q4_K_M.gguf`
-- SHA-256: `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5`
+- Model repository: https://huggingface.co/Qwen/Qwen3-4B-GGUF
+- Exact file: \`Qwen3-4B-Q4_K_M.gguf\`
+- Approximate download: 2.5 GB
+- SHA-256: \`7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5\`
 - License: Apache-2.0
 
-The Model Library verifies this SHA-256 during download. Once installed, Qwen3 runs locally without internet.
+The app downloads and checks this exact file automatically at first start. It is the single model used for chat, coding, debugging, reasoning and n8n workflow generation. NexaAI does not offer model switching or optional alternative LLM downloads.
+
+The engine uses a 4K context and up to four CPU threads by default. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
+
+## Chat and coding
+
+- Bengali and English conversation.
+- Python, JavaScript, HTML/CSS, Windows troubleshooting and coding assistance.
+- Explain, review and debug code; generate complete files and project structures.
+- Local text and source-code file attachments.
+- All model inference happens on the local computer after setup.
 
 ## Chat History
 
-- Conversations are automatically saved as you send messages and receive replies.
-- Open **Chat History** to browse, reopen, or delete previous conversations.
-- New conversations are kept separate.
-- History stays under `%LOCALAPPDATA%\NexaAI\Data\chats`.
-- Old v1.0/v1.1 chat files are also recognised by the history list.
+- Conversations are saved locally as you send messages and receive replies.
+- Open **Chat History** to browse, reopen or delete previous conversations.
+- History is stored under \`%LOCALAPPDATA%\\NexaAI\\Data\\chats\`.
+- Existing v1.0/v1.1 history files are recognised.
 
 ## Voice Chat
 
-Press **Voice chat**, speak into your microphone, then press **Stop & send**.
+Voice chat uses Qwen3 for the actual assistant conversation. Speech input needs a separate speech-to-text engine; this is not a second chat LLM.
 
-- Speech recognition uses multilingual **faster-whisper base** locally on the CPU (multilingual, int8).
-- The first voice-chat use downloads the speech model (roughly 150 MB). Later transcription is offline.
-- After transcription, the recognized text is sent to the active local language model.
-- **Speak voice-chat replies** uses Windows SAPI speech voices locally; no cloud TTS is used.
-- Bengali speech output depends on whether a Bengali SAPI voice is installed in Windows. If not, Windows may use its default voice, which may pronounce Bangla poorly.
-- Microphone recording and transcription require a working microphone and available RAM. On low-memory PCs, close other heavy applications.
+- Microphone capture runs locally.
+- Multilingual speech recognition uses faster-whisper **base** on CPU (int8). The speech model is downloaded on first voice use (roughly 150 MB), then recognition works offline.
+- Speech replies use Windows SAPI voices already installed on the PC. No separate TTS model is required.
+- Bengali speech output depends on an installed Bengali Windows voice. Without one, Windows may use its default voice and Bengali pronunciation may be poor.
 
-Voice model cache: `%LOCALAPPDATA%\NexaAI\Voice`.
+Voice model cache: \`%LOCALAPPDATA%\\NexaAI\\Voice\`.
 
 ## n8n Workflow Studio
 
-Open **n8n Workflow Studio** and describe an automation in Bangla or English. The active local model will:
-1. Create an n8n workflow export JSON.
-2. Validate the basic workflow structure, node names and connection references.
-3. Let you copy the JSON or export it as a `.json` file.
+Describe an automation in Bangla or English. The same Qwen3 model creates a workflow JSON, checks basic node names and connection references, and lets you copy or export the JSON for import into n8n.
 
-The studio does not execute the workflow. Import the exported JSON into your own n8n instance. You can self-host n8n locally and use local/manual/schedule/webhook nodes offline, but nodes that call Gmail, Facebook, cloud APIs or other internet services still need network access and configured credentials. Nexa AI never fabricates credentials.
+**The current studio generates and validates workflow JSON; it does not execute or monitor n8n workflows yet.** Import the JSON into your own n8n instance. A locally hosted n8n can run local workflows offline; nodes that contact Gmail, Facebook, cloud APIs or other internet services still require network access and configured credentials.
 
-## Model Library
+## Plugins and appearance
 
-The built-in catalogue includes:
-- **Qwen3 4B Q4_K_M** — recommended all-rounder for coding, Bengali/English chat and automation design.
-- **Qwen2.5 1.5B Instruct** — compact fallback bundled with the installer.
-- **Qwen2.5 Coder 1.5B** — lightweight coding specialist.
-- **SmolLM2 1.7B** — compact English chat model.
-- **Qwen2.5-VL 3B + projector** — optional vision model for image and sampled video-frame analysis.
+- **Plugin Manager:** import a local plugin ZIP, review it, and enable it explicitly. Plugin code runs with the same Windows permissions as NexaAI, so import only code you trust.
+- **Eye Comfort Premium** is the default theme. OLED Midnight and Soft Paper themes are also available.
+- Preferences are stored locally.
 
-Only one chat/vision model is loaded at a time. Optional model downloads happen from the Model Library and are stored under `%LOCALAPPDATA%\NexaAI\models`.
+## Supported attachments and limitations
 
-## Plugin Manager
+The one-model setup uses Qwen3 4B, a text-only model. It supports selectable-text PDFs and text/code documents. **Image/video understanding and scanned-PDF OCR are not included**, because they would require additional specialist models or OCR components. The app does not silently download another vision or coding LLM.
 
-Open **Plugin Manager** to review the optional local capability catalogue or import a third-party plugin ZIP. Imported plugins must include `plugin.json` and a Python entrypoint with `register(context)`. They remain disabled until explicitly enabled by you. Plugin code runs with the same Windows permissions as Nexa AI; only import plugins you trust.
+## Privacy and offline operation
 
-A template is available under `plugin-template/`, and plugin author instructions are in `plugins/README.md`.
+- Qwen3 inference and the local API are bound to \`127.0.0.1\`.
+- Chat history, models, voice cache, preferences and plugins stay under \`%LOCALAPPDATA%\\NexaAI\`.
+- Internet is needed for the one-time Qwen3 download and first-time Whisper download. After those downloads, chat and voice recognition work locally.
+- External services used by n8n workflows still require their own network access.
+- NexaAI does not send conversations or attached text documents to a cloud AI API.
 
-## Eye Comfort Themes
+## Build from source
 
-The default theme is **Eye Comfort Premium**. You can also select **OLED Midnight** or **Soft Paper**. Theme preference is saved locally.
+The GitHub Actions workflow **Build Nexa AI Windows Offline Installer** compiles the app, runs the unit tests and creates the Windows x64 installer.
 
-## Privacy and Offline Behaviour
-
-- Local chat and workflow generation use only the local model server bound to `127.0.0.1`.
-- Chat history, models, voice cache, preferences and plugins are stored under `%LOCALAPPDATA%\NexaAI`.
-- Qwen3 and the Whisper speech model require an initial download. Once downloaded, they work offline.
-- The app does not upload conversations or files to a cloud API.
-- External n8n integrations still need access to their corresponding external services.
-
-## Build from Source
-
-The GitHub Actions workflow **Build Nexa AI Windows Offline Installer** compiles the app, runs unit tests, packages the local runtime and creates an Inno Setup installer.
-
-## Third-party Licences
-
-See `THIRD-PARTY-NOTICES.txt` for the bundled application and model notices. Review each optional model and voice license before redistribution or commercial use.
+See \`THIRD-PARTY-NOTICES.txt\` for upstream software and model licences.

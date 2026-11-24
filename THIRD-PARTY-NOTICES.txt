@@ -1,47 +1,35 @@
-Nexa AI bundles third-party software and model weights for local-only inference.
+Nexa AI uses third-party software and downloads local model weights for on-device inference.
 
 1. llama.cpp
    Project: https://github.com/ggml-org/llama.cpp
    License: MIT
    The Windows CPU runtime is downloaded from the official ggml-org/llama.cpp release.
 
-2. Qwen2.5-1.5B-Instruct-GGUF (Q4_K_M)
-   Project: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+2. Qwen3-4B-Instruct-GGUF Q4_K_M (downloaded automatically on first launch)
+   Project: https://huggingface.co/Qwen/Qwen3-4B-GGUF
    License: Apache License 2.0
-   Model card and license information are available at the project URL.
+   Exact file: Qwen3-4B-Q4_K_M.gguf
+   SHA-256: 7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5
+   This is the one and only chat/coding/reasoning model offered by Nexa AI.
 
 3. Python dependencies
-   FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv and pypdf
-   retain their respective upstream licenses. See each upstream project for license terms.
+   FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,
+   NumPy, faster-whisper, CTranslate2, av, sounddevice, PortAudio, pyttsx3,
+   comtypes and imageio-ffmpeg retain their respective upstream licences.
+   See each upstream project for licence terms.
 
-4. Optional model catalogue
-   - Qwen2.5-Coder-1.5B-Instruct-GGUF (tensorblock): Apache-2.0
-   - SmolLM2-1.7B-Instruct-GGUF (bartowski): upstream model license Apache-2.0
-   - Qwen2.5-VL-3B-Instruct-GGUF (ggml-org), including mmproj: Apache-2.0
-   Optional weights are fetched from the linked upstream Hugging Face repositories by the in-app Model Library and are not bundled in the default installer.
+4. Whisper base speech-recognition model (downloaded on first Voice Chat use)
+   Project: https://github.com/openai/whisper
+   Licence: MIT (see upstream project/model distribution).
+   This is a speech-to-text component for voice input, not an alternative chat LLM.
 
 5. imageio-ffmpeg
    Project: https://github.com/imageio/imageio-ffmpeg
    License: BSD 2-Clause
-   The Windows wheel includes an FFmpeg executable obtained from upstream builds. FFmpeg's own licence depends on the options enabled in the binary; see https://ffmpeg.org/legal.html and the upstream build metadata. The executable's licence/version can be inspected with its `-L` option.
+   The Windows wheel includes an FFmpeg executable obtained from upstream builds.
+   FFmpeg's own licence depends on the options enabled in the binary; see
+   https://ffmpeg.org/legal.html and the upstream build metadata.
 
-6. Qwen3-4B-Instruct GGUF Q4_K_M (optional in-app download)
-   Project: https://huggingface.co/Qwen/Qwen3-4B-GGUF
-   License: Apache License 2.0
-   SHA-256 of Qwen3-4B-Q4_K_M.gguf: 7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5
-
-7. faster-whisper and CTranslate2
-   Projects: https://github.com/SYSTRAN/faster-whisper and https://github.com/OpenNMT/CTranslate2
-   Licences: MIT (see the upstream distributions)
-
-8. OpenAI Whisper small speech model (downloaded on first Voice Chat use)
-   Project: https://github.com/openai/whisper
-   Licence: MIT (see the upstream project/model distribution)
-
-9. python-sounddevice
-   Project: https://github.com/spatialaudio/python-sounddevice
-   Licence: MIT; PortAudio has its own upstream licence notices.
-
-10. pyttsx3 / comtypes
-    Projects: https://github.com/nateshmbhat/pyttsx3 and https://github.com/enthought/comtypes
-    See each upstream project for its licence. Nexa AI uses the Windows SAPI voices already installed by the user; it does not redistribute a voice model.
+6. Windows SAPI voices
+   Nexa AI uses Windows speech voices already installed by the user. No voice is
+   redistributed by Nexa AI.
