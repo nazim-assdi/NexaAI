@@ -1,13 +1,16 @@
 import json
+import os
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
 from nexa_ai.local_backend import _parse_content, prepare_messages
 from nexa_ai.model_library import MODEL_CATALOG
 from nexa_ai.plugin_manager import PluginManager
+from nexa_ai.file_store import StoredFile
 
 
 class CoreTests(unittest.TestCase):
@@ -31,6 +34,16 @@ class CoreTests(unittest.TestCase):
     def test_model_catalog_contains_multiple_roles(self):
         roles = {item["role"] for item in MODEL_CATALOG.values()}
         self.assertTrue({"Chat", "Coding", "Vision"}.issubset(roles))
+        self.assertIn("mmproj_filename", MODEL_CATALOG["qwen2.5-vl-3b"])
+
+    def test_image_attachment_requires_vision_model(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image_path = Path(folder) / "sample.png"
+            image_path.write_bytes(b"not-decoded-because-vision-is-disabled")
+            stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
+            with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": ""}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
+                with self.assertRaisesRegex(RuntimeError, "Qwen2.5-VL"):
+                    prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
 
     def test_plugin_toggle_persists(self):
         with tempfile.TemporaryDirectory() as folder:
