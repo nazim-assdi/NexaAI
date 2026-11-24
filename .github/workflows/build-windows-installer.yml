@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 180
     env:
       LLAMA_CPP_TAG: b12651
+      LLAMA_RUNTIME_URL: https://github.com/ggml-org/llama.cpp/releases/download/b12651/llama-b12651-bin-win-cpu-x64.zip
+      LLAMA_RUNTIME_SHA256: b2d794fa7587aba29f654d717ff9b73e31caeabf50a7766692903008bbe0855d
       MODEL_FILE: qwen2.5-1.5b-instruct-q4_k_m.gguf
       MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
     steps:
@@ -68,7 +70,7 @@ jobs:
 
       - name: Compile and run tests
         run: |
-          python -m compileall -q nexa_ai desktop.py run.py
+          python -m compileall -q nexa_ai desktop.py
           python -m unittest discover -s tests -v
 
       - name: Build self-contained desktop application
