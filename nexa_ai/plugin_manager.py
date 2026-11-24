@@ -129,8 +129,8 @@ class PluginManager:
         for item in PLUGIN_CATALOG:
             entry = dict(item)
             entry["enabled"] = self.enabled(item["id"])
-            entry["installed"] = True
-            entry["kind"] = "built-in capability"
+            entry["installed"] = False
+            entry["kind"] = "catalogue entry"
             items.append(entry)
 
         for folder in sorted(self.plugins_dir.iterdir()):
@@ -174,33 +174,56 @@ class PluginManager:
             total = sum(item.file_size for item in infos)
             if total > max_total:
                 raise ValueError("Plugin ZIP is larger than the 50 MB safety limit.")
-            names = [Path(item.filename) for item in infos]
-            if any(name.is_absolute() or ".." in name.parts for name in names):
-                raise ValueError("Plugin ZIP contains an unsafe file path.")
-            manifests = [item for item in infos if item.filename.endswith("plugin.json")]
+
+            normalized: dict[str, zipfile.ZipInfo] = {}
+            for info in infos:
+                raw_name = info.filename.replace("\\", "/")
+                parts = [part for part in raw_name.split("/") if part not in ("", ".")]
+                if raw_name.startswith("/") or any(part == ".." for part in parts) or (parts and ":" in parts[0]):
+                    raise ValueError("Plugin ZIP contains an unsafe file path.")
+                normalized[raw_name] = info
+
+            manifests = [name for name in normalized if name.endswith("plugin.json")]
             if len(manifests) != 1:
                 raise ValueError("Plugin ZIP must contain exactly one plugin.json manifest.")
-            root = Path(manifests[0].filename).parent
-            manifest = json.loads(archive.read(manifests[0]).decode("utf-8"))
+            manifest_name = manifests[0]
+            root = Path(manifest_name).parent
+            manifest = json.loads(archive.read(normalized[manifest_name]).decode("utf-8"))
             plugin_id = str(manifest.get("id", ""))
             if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,63}", plugin_id):
                 raise ValueError("Plugin manifest has an invalid id.")
             entrypoint = str(manifest.get("entrypoint", "plugin.py"))
             entry_path = (root / entrypoint).as_posix()
-            if entry_path not in {info.filename for info in infos}:
+            if entry_path not in normalized:
                 raise ValueError("Plugin entrypoint is missing from the archive.")
+
             destination = self.plugins_dir / plugin_id
-            destination.mkdir(parents=True, exist_ok=True)
-            for info, name in zip(infos, names):
-                target = (self.plugins_dir / name).resolve()
-                if self.plugins_dir.resolve() not in target.parents:
-                    raise ValueError("Plugin ZIP attempted to write outside the plugin folder.")
-                target.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                raise FileExistsError(f"Plugin '{plugin_id}' is already imported. Remove its folder before replacing it.")
+
+            for name, info in normalized.items():
+                archive_path_obj = Path(name)
+                if root != Path("."):
+                    try:
+                        relative = archive_path_obj.relative_to(root)
+                    except ValueError:
+                        continue
+                else:
+                    relative = archive_path_obj
+                if not relative.parts:
+                    continue
+                target = (destination / relative).resolve()
+                if destination.resolve() not in target.parents and target != destination.resolve():
+                    raise ValueError("Plugin ZIP attempted to write outside its package folder.")
                 if info.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                     continue
+                target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(info) as src, target.open("wb") as dst:
                     dst.write(src.read())
+
+            if not (destination / "plugin.json").is_file():
+                raise ValueError("The plugin manifest must be at the package root.")
             self.state.setdefault(plugin_id, False)
             self._save_state()
             return plugin_id
