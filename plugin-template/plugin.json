@@ -1,0 +1,7 @@
+{
+  "id": "example-plugin",
+  "name": "Example Nexa Plugin",
+  "category": "Example",
+  "description": "A minimal user-imported extension for Nexa AI.",
+  "entrypoint": "plugin.py"
+}
