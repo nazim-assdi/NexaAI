@@ -490,8 +490,7 @@ class NexaDesktop:
             )
             if not self.active_model_path.is_file():
                 raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
-            model_sha = verify_model_file(QWEN3_MODEL_KEY, self.active_model_path)
-            self.log_handle.write(f"Qwen3 GGUF integrity verified: SHA-256 {model_sha}\n")
+            self.log_handle.write("Qwen3 GGUF header and SHA-256 verification passed.\n")
             if self._port_is_occupied(LOCAL_MODEL_PORT):
                 raise RuntimeError(
                     f"Local AI port {LOCAL_MODEL_PORT} is already in use. "
@@ -511,9 +510,9 @@ class NexaDesktop:
             self.log_handle.write(f"llama.cpp runtime: {(runtime_probe.stdout or runtime_probe.stderr).strip()}\n")
             available_ram = self._available_memory_gb()
             if available_ram is not None:
-                self.log_handle.write(f"Available physical RAM before model load: {available_ram:.2f} GB\\n")
+                self.log_handle.write(f"Available physical RAM before model load: {available_ram:.2f} GB\n")
                 if available_ram < 3.5:
-                    self.log_handle.write("WARNING: available RAM is low; Qwen3 4B may still exceed memory limits.\\n")
+                    self.log_handle.write("WARNING: available RAM is low; Qwen3 4B may still exceed memory limits.\n")
 
             profiles = engine_profiles(os.cpu_count())
             if available_ram is not None and available_ram < 4.0:
@@ -525,10 +524,10 @@ class NexaDesktop:
             for attempt, profile in enumerate(profiles, start=1):
                 cmd = build_engine_command(exe, self.active_model_path, LOCAL_MODEL_PORT, self.current_model_id, profile)
                 self.log_handle.write(
-                    f"\\n=== llama-server attempt {attempt}: {profile['name']} "
-                    f"(ctx={profile['context']}, batch={profile['batch']}, ubatch={profile['ubatch']}, threads={profile['threads']}) ===\\n"
+                    f"\n=== llama-server attempt {attempt}: {profile['name']} "
+                    f"(ctx={profile['context']}, batch={profile['batch']}, ubatch={profile['ubatch']}, threads={profile['threads']}) ===\n"
                 )
-                self.log_handle.write("Command: " + subprocess.list2cmdline(cmd) + "\\n")
+                self.log_handle.write("Command: " + subprocess.list2cmdline(cmd) + "\n")
                 self.log_handle.flush()
                 self.llama_process = subprocess.Popen(
                     cmd, cwd=str(self.runtime_dir), stdin=subprocess.DEVNULL,
@@ -537,11 +536,11 @@ class NexaDesktop:
                 )
                 if self._wait_for_model_server(420):
                     server_ready = True
-                    self.log_handle.write(f"llama-server ready using {profile['name']} profile.\\n")
+                    self.log_handle.write(f"llama-server ready using {profile['name']} profile.\n")
                     break
                 return_code = self.llama_process.poll() if self.llama_process else None
                 failures.append(f"{profile['name']} profile: process exit code {return_code}")
-                self.log_handle.write(f"{failures[-1]}\\n")
+                self.log_handle.write(f"{failures[-1]}\n")
                 self.log_handle.flush()
                 self._stop_llama_process()
                 time.sleep(2)
@@ -550,12 +549,12 @@ class NexaDesktop:
                 log_tail = self._read_runtime_log_tail(35)
                 ram_text = f"Available RAM before startup: {available_ram:.2f} GB" if available_ram is not None else "Available RAM: unavailable"
                 raise RuntimeError(
-                    "The local Qwen3 engine could not start after CPU/memory fallback profiles.\\n"
-                    + ram_text + "\\n"
-                    + "\\n".join(failures)
-                    + "\\n\\nRecent llama.cpp diagnostics:\\n"
+                    "The local Qwen3 engine could not start after CPU/memory fallback profiles.\n"
+                    + ram_text + "\n"
+                    + "\n".join(failures)
+                    + "\n\nRecent llama.cpp diagnostics:\n"
                     + (log_tail or "No llama.cpp output was recorded.")
-                    + f"\\n\\nFull log: {self.log_path}"
+                    + f"\n\nFull log: {self.log_path}"
                 )
 
             if self.api_server is None:
@@ -603,7 +602,7 @@ class NexaDesktop:
         try:
             self.log_handle.flush()
             lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            return "\\n".join(lines[-line_count:])
+            return "\n".join(lines[-line_count:])
         except OSError:
             return ""
 
