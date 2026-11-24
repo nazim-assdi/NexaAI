@@ -1,84 +1,42 @@
-# Nexa AI — Offline-first Local AI Assistant
+# Nexa AI — Installable Offline Desktop Assistant
 
-Nexa AI is a Windows-friendly terminal AI assistant with a local OpenAI-compatible API. Its default provider is a model running on your own PC through **Ollama** or **llama.cpp**. In local mode, prompts and supported attachments are sent to the local model endpoint, not to Gemini or another cloud API.
+Nexa AI is a Windows x64 desktop app that includes its own CPU inference runtime and local language model. It does not require Python, Ollama, a terminal, an API key, or a separate model download on the user's PC.
 
-## Important: What “offline” means
+## Install the software
 
-Nexa can chat offline **after** Python dependencies and a model have been downloaded and installed. The repository does not contain multi-gigabyte model weights. Initial installation/download therefore requires internet or a pre-populated offline package cache.
+1. Open the repository's Releases page: https://github.com/nazim-assdi/NexaAI/releases
+2. Download NexaAI-Setup-1.0.0-Windows-x64.exe.
+3. Double-click the installer and finish the setup.
+4. Launch Nexa AI from the Start Menu or Desktop shortcut.
 
-- **Offline chat and coding:** Ollama, llama.cpp, or another local OpenAI-compatible server.
-- **Text, CSV, JSON and selectable-text PDF:** processed locally.
-- **Images:** require a local vision-capable model.
-- **Video:** FFmpeg extracts sample frames locally; a vision-capable model is required.
-- **Audio:** optional local transcription through whisper.cpp and a downloaded Whisper model.
-- **Gemini:** optional online mode only; it is not needed in the offline configuration.
+The installer bundles:
+- Nexa AI desktop interface and local API.
+- llama.cpp CPU runtime (starts automatically inside Nexa AI).
+- Qwen2.5-1.5B-Instruct GGUF Q4_K_M local model (about 1.12 GB before installer compression).
 
-## Quick start (Windows)
+After installation, Nexa AI launches its model locally. Disconnecting the internet does not stop normal chat or supported document analysis. The app stores chats and attachments under %LOCALAPPDATA%\NexaAI\Data.
 
-1. Install Python 3.10+ and [Ollama](https://ollama.com/download).
-2. While internet is available, download a model once:
-   ```powershell
-   ollama pull qwen2.5:3b
-   ```
-3. Clone the repository:
-   ```powershell
-   git clone https://github.com/nazim-assdi/NexaAI.git
-   cd NexaAI
-   ```
-4. Rebuild and extract the source archive:
-   ```powershell
-   .\restore-source.ps1
-   ```
-   The script verifies the archive SHA-256 before extracting it to `NexaAI-source`.
-5. Run `NexaAI-source\setup.bat` once to install Python packages.
-6. Keep Ollama running and double-click `NexaAI-source\run.bat`. You can then disconnect from the internet and use local chat.
+## Local-only / offline behaviour
 
-Default configuration: `NEXA_PROVIDER=local`, `http://127.0.0.1:11434/v1`, model `qwen2.5:3b`. For an 8 GB RAM computer, start with a small/quantized model. Model speed depends on CPU, RAM, quantization and context length.
+- No external model API is called in the desktop build.
+- The bundled llama.cpp process binds only to 127.0.0.1 and runs with offline mode enabled.
+- Nexa AI's local OpenAI-compatible API is available at http://127.0.0.1:8000/v1 while the app is open.
+- The app closes its model process when the window exits.
+- PDF files with selectable text and common text/code files can be attached locally.
+- Scanned PDFs need OCR, and image/audio/video understanding is not included in this first desktop build.
 
-For image understanding, install a compatible local vision model, for example `ollama pull qwen2.5vl:3b`, then set `NEXA_MODEL=qwen2.5vl:3b` in `.env`.
+## Performance and hardware
 
-## Local API
+The default bundle uses a 1.5-billion-parameter Q4_K_M model to keep memory use manageable on ordinary CPU-only computers. It is intended for local chat, writing, explanations and basic coding help. It is smaller and less capable than large cloud models; generation speed depends on CPU and available RAM. Use a 64-bit Windows x64 PC. Keep at least 3 GB free for application files and additional working space; the installer itself is large because the model weights are included.
 
-Nexa exposes its own API at `http://127.0.0.1:8000/v1`:
+## Build the installer from source
 
-- `GET /health`
-- `GET /v1/models`
-- `POST /v1/chat/completions` (streaming and non-streaming)
-- `POST /v1/files` (stores attachments on this computer)
-- `GET /v1/files/{file_id}`
-- `DELETE /v1/files/{file_id}`
+The GitHub Actions workflow Build Nexa AI Windows Offline Installer downloads the official llama.cpp Windows CPU runtime and the Qwen model, validates the model SHA256, packages the desktop application with PyInstaller, and builds a single Inno Setup installer.
 
-For llama.cpp, change `NEXA_LOCAL_BASE_URL=http://127.0.0.1:8080/v1` and set `NEXA_MODEL` to the model ID exposed by that server. Any OpenAI-compatible local server can be used.
+Run it from GitHub Actions, choose Build Nexa AI Windows Offline Installer, then select Run workflow. A successful build publishes an installer release and a downloadable Actions artifact.
 
-## CLI commands
+## Development
 
-| Command | Purpose |
-|---|---|
-| `/attach "C:\\path\\file.png"` | Attach a local image, video, audio, PDF or text file |
-| `/model` | Show the active model |
-| `/model MODEL_NAME` | Switch model for this session |
-| `/models` | List local models |
-| `/clear` | Clear conversation |
-| `/help` | Show commands |
-| `/exit` | Save and exit |
+Install the packages from requirements.txt, then run the compile and unit-test checks. The workflow runs these checks before building the Windows installer.
 
-## Optional online Gemini mode
-
-Install optional dependencies with `pip install -r requirements-gemini.txt`, then set `NEXA_PROVIDER=gemini`, `GEMINI_API_KEY`, and `GEMINI_MODEL` in `.env`. This mode needs internet and is not offline.
-
-## Privacy and safety
-
-- The API listens on `127.0.0.1` by default.
-- Chat history, upload files and metadata are stored locally under `.data/`.
-- Local mode sends requests only to `NEXA_LOCAL_BASE_URL`.
-- Do not expose port 8000 publicly without authentication, rate limits and HTTPS.
-- The `.env` file is ignored by Git. Never commit API keys.
-
-## Development checks
-
-```powershell
-.venv\Scripts\python.exe -m compileall nexa_ai run.py
-.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-MIT License — see `LICENSE`.
+License notes for the bundled llama.cpp runtime and Qwen model are included in THIRD-PARTY-NOTICES.txt.
