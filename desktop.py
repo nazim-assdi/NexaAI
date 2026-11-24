@@ -127,6 +127,7 @@ class NexaDesktop:
         self.current_model_name = "Qwen 2.5 · 1.5B Q4"
         self.active_model_path = self.model_path
         self.active_mmproj_path: Path | None = None
+        self._restore_model_preference()
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
         self.llama_process: subprocess.Popen | None = None
@@ -340,9 +341,35 @@ class NexaDesktop:
         for child in widget.winfo_children():
             self._retheme_widget(child, colour_map)
 
+    def _restore_model_preference(self) -> None:
+        try:
+            prefs = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            model_key = str(prefs.get("model", ""))
+            if model_key not in MODEL_CATALOG or not model_is_installed(model_key, self.app_root, self.model_path):
+                return
+            item = MODEL_CATALOG[model_key]
+            model_path, mmproj_path = model_paths(model_key, self.app_root, self.model_path)
+            if not model_path:
+                return
+            self.current_model_key = model_key
+            self.current_model_id = item["id"]
+            self.current_model_name = item["name"]
+            self.active_model_path = model_path
+            self.active_mmproj_path = mmproj_path
+            os.environ["NEXA_MODEL"] = self.current_model_id
+            if mmproj_path:
+                os.environ["NEXA_MM_PROJ_PATH"] = str(mmproj_path)
+            else:
+                os.environ.pop("NEXA_MM_PROJ_PATH", None)
+        except (OSError, ValueError, TypeError, KeyError):
+            return
+
     def _save_preferences(self) -> None:
         try:
-            payload = {"theme": self.theme_name}
+            payload = {
+                "theme": self.theme_name,
+                "model": self.current_model_key,
+            }
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.preferences_path)
@@ -423,6 +450,7 @@ class NexaDesktop:
         self.current_model_name = item["name"]
         self.active_model_path = model_path
         self.active_mmproj_path = mmproj_path
+        os.environ["NEXA_MODEL"] = self.current_model_id
         if mmproj_path:
             os.environ["NEXA_MM_PROJ_PATH"] = str(mmproj_path)
         else:
@@ -432,6 +460,7 @@ class NexaDesktop:
         self.send_button.configure(state="disabled")
         self.status_var.set(f"Loading {item['name']}…")
         self.status_label.configure(fg=self.ACCENT)
+        self._save_preferences()
         if parent:
             parent.destroy()
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaModelSwitch").start()
