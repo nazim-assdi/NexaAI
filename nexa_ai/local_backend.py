@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterator
@@ -134,8 +135,11 @@ def _read_attachment(file_id: str, prompt: str) -> str | list[dict[str, Any]]:
                 f"Frames are sampled about every 8 seconds from the beginning. {prompt}"
             ),
         }]
-        content.extend(_image_url_part(frame, "image/jpeg") for frame in frames)
-        return content
+        try:
+            content.extend(_image_url_part(frame, "image/jpeg") for frame in frames)
+            return content
+        finally:
+            shutil.rmtree(frames[0].parent, ignore_errors=True)
 
     allowed_text = stored.mime_type.startswith("text/") or stored.mime_type in {
         "application/json", "application/xml", "application/javascript", "application/csv",
