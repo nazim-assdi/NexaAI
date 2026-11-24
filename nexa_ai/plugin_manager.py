@@ -229,13 +229,17 @@ class PluginManager:
             return plugin_id
 
     def load_enabled_imported_plugins(self, data_dir: Path | None = None) -> PluginContext:
+        self.commands.clear()
+        self.panels.clear()
         context = PluginContext(data_dir or self.data_dir, self.commands, self.panels)
         for item in self.list_plugins():
             if item.get("kind") != "imported extension" or not item.get("enabled"):
                 continue
             entrypoint = Path(item["entrypoint_path"])
             module_name = f"nexa_plugin_{item['id'].replace('-', '_').replace('.', '_')}"
-            spec = importlib.util.spec_from_file_location(module_name, entrypoint)
+            spec = importlib.util.spec_from_file_location(
+                module_name, entrypoint, submodule_search_locations=[str(entrypoint.parent)]
+            )
             if not spec or not spec.loader:
                 continue
             module = importlib.util.module_from_spec(spec)
