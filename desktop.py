@@ -7,8 +7,9 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+import wave
 from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 import httpx
@@ -18,9 +19,11 @@ from tkinter.scrolledtext import ScrolledText
 
 from nexa_ai.model_library import MODEL_CATALOG, model_is_installed, model_paths, download_model
 from nexa_ai.plugin_manager import PluginManager
+from nexa_ai.history_store import HistoryStore
+from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 MODEL_ID = "nexa-qwen2.5-1.5b"
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -108,6 +111,9 @@ class NexaDesktop:
         self.runtime_dir, self.model_path, self.data_dir = configure_environment()
         self.app_root = app_data_dir()
         self.plugin_manager = PluginManager(self.app_root)
+        self.history_store = HistoryStore(self.data_dir)
+        self.conversation_id = uuid4().hex
+        self.conversation_title = "New conversation"
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
         self._set_palette(self.theme_name)
@@ -128,6 +134,12 @@ class NexaDesktop:
         self.pending_files: list[dict[str, str]] = []
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self.recording = False
+        self.recording_stream = None
+        self.recording_chunks: list[Any] = []
+        self.recording_lock = threading.Lock()
+        self.voice_turn = False
+        self.whisper_model = None
         self._build_ui()
         self._append_message(
             "Nexa AI",
@@ -179,7 +191,15 @@ class NexaDesktop:
         ttk.Button(
             sidebar, text="＋   New conversation", style="Accent.TButton",
             command=self.new_conversation,
-        ).pack(fill="x", padx=14, pady=(0, 12))
+        ).pack(fill="x", padx=14, pady=(0, 8))
+        ttk.Button(
+            sidebar, text="◷   Chat History", style="Nexa.TButton",
+            command=self.open_history,
+        ).pack(fill="x", padx=14, pady=(0, 8))
+        ttk.Button(
+            sidebar, text="⚙   n8n Workflow Studio", style="Nexa.TButton",
+            command=self.open_n8n_studio,
+        ).pack(fill="x", padx=14, pady=(0, 10))
         ttk.Button(
             sidebar, text="◈   Model Library", style="Nexa.TButton",
             command=self.open_model_library,
@@ -244,9 +264,13 @@ class NexaDesktop:
         self.input.bind("<Control-Return>", self._send_hotkey)
         actions = tk.Frame(composer, bg=self.PANEL)
         actions.pack(side="right", fill="y", padx=8, pady=8)
+        self.voice_button = ttk.Button(actions, text="🎙 Voice chat", style="Nexa.TButton", command=self.toggle_voice_chat)
+        self.voice_button.pack(fill="x", pady=(0, 6))
         ttk.Button(actions, text="Attach", style="Nexa.TButton", command=self.attach_file).pack(fill="x", pady=(0, 6))
         self.send_button = ttk.Button(actions, text="Send  ↑", style="Accent.TButton", command=self.send_message, state="disabled")
         self.send_button.pack(fill="x")
+        self.speak_replies_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(footer, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(anchor="e", pady=(5, 0))
         tk.Label(
             footer,
             text="Your messages and files stay on this computer. No cloud API is used.",
@@ -519,12 +543,12 @@ class NexaDesktop:
                 raise FileNotFoundError(f"Built-in inference runtime is missing: {exe}")
             if not self.active_model_path.is_file():
                 raise FileNotFoundError(f"The selected local AI model is missing: {self.active_model_path}")
-            threads = max(2, min(6, (os.cpu_count() or 4)))
+            threads = max(2, min(4, (os.cpu_count() or 4)))
             cmd = [
                 str(exe), "-m", str(self.active_model_path),
                 "--host", "127.0.0.1", "--port", str(LOCAL_MODEL_PORT),
                 "-c", "4096", "-t", str(threads), "--parallel", "1",
-                "--alias", self.current_model_id, "--no-webui", "--offline",
+                "--alias", self.current_model_id, "--no-webui", "--offline", "--jinja",
             ]
             if self.active_mmproj_path:
                 if not self.active_mmproj_path.is_file():
@@ -578,7 +602,7 @@ class NexaDesktop:
                     self.send_button.configure(state="normal")
                     self._append_message(
                         "Nexa AI",
-                        "I'm ready. Your AI model is running locally on this PC. You can disconnect from the internet and continue chatting.",
+                        "I'm ready. Your AI model is running locally on this PC. You can disconnect from the internet and continue chatting. For stronger coding and n8n workflow design, open Model Library and download the recommended Qwen3 4B model once.",
                         "assistant",
                     )
                 elif kind == "boot_error":
@@ -596,6 +620,10 @@ class NexaDesktop:
                     self.chat.insert("end", "\n\n", "body")
                     self.chat.configure(state="disabled")
                     self.chat.see("end")
+                    if self.voice_turn:
+                        self.voice_turn = False
+                        if self.speak_replies_var.get() and self.messages and self.messages[-1].get("role") == "assistant":
+                            self._speak_text(str(self.messages[-1].get("content", "")))
                 elif kind == "request_error":
                     self.busy = False
                     self.send_button.configure(state="normal" if self.ready else "disabled")
@@ -613,6 +641,20 @@ class NexaDesktop:
                     self.uploading = False
                     self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
                     messagebox.showerror("Attachment error", str(payload))
+                elif kind == "voice_status":
+                    self.status_var.set(str(payload))
+                elif kind == "voice_transcribed":
+                    self.voice_button.configure(state="normal", text="🎙 Voice chat")
+                    self.status_var.set("Voice recognized · sending to local AI…")
+                    self.input.delete("1.0", "end")
+                    self.input.insert("1.0", str(payload))
+                    self.voice_turn = True
+                    self.send_message()
+                elif kind == "voice_error":
+                    self.voice_button.configure(state="normal", text="🎙 Voice chat")
+                    self.recording = False
+                    self.status_var.set("Voice chat unavailable")
+                    messagebox.showerror("Voice chat", str(payload))
         except queue.Empty:
             pass
         if self.root.winfo_exists():
@@ -674,6 +716,9 @@ class NexaDesktop:
         if attachments:
             user_content.extend({"type": "input_file", "file_id": item["id"]} for item in attachments)
         self.messages.append({"role": "user", "content": user_content})
+        if self.conversation_title == "New conversation":
+            self.conversation_title = (text or "Attached files").replace("\n", " ").strip()[:90] or "Conversation"
+        self._save_chat()
         visible_text = text or "Please analyze the attached document."
         if attachments:
             visible_text += "\n\n" + "\n".join(f"📎 {x.get('filename', 'file')}" for x in attachments)
@@ -686,7 +731,7 @@ class NexaDesktop:
         try:
             payload = {
                 "model": self.current_model_id, "messages": self.messages, "stream": True,
-                "temperature": 0.7, "max_tokens": 1536,
+                "temperature": 0.6, "max_tokens": 3072,
             }
             with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
                 with client.stream("POST", f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload) as response:
@@ -729,16 +774,126 @@ class NexaDesktop:
 
     def _save_chat(self) -> None:
         try:
-            folder = self.data_dir / "chats"
-            folder.mkdir(parents=True, exist_ok=True)
-            name = f"chat-{datetime.now():%Y%m%d-%H%M%S}.json"
-            (folder / name).write_text(json.dumps(self.messages, ensure_ascii=False, indent=2), encoding="utf-8")
-        except OSError:
+            if not any(message.get("role") == "user" for message in self.messages):
+                return
+            self.history_store.save(
+                self.conversation_id,
+                self.conversation_title,
+                self.messages,
+                self.current_model_id,
+            )
+        except (OSError, ValueError, TypeError):
             pass
 
+    @staticmethod
+    def _history_message_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") in {"text", "input_text"}:
+                    parts.append(str(item.get("text", "")))
+                elif item.get("type") in {"input_file", "file"}:
+                    parts.append(f"[Attachment: {item.get('file_id', 'local file')}]")
+            return "\n".join(parts)
+        return str(content or "")
+
+    def _render_conversation(self, messages: list[dict[str, Any]]) -> None:
+        self.chat.configure(state="normal")
+        self.chat.delete("1.0", "end")
+        self.chat.configure(state="disabled")
+        for message in messages:
+            role = message.get("role")
+            if role not in {"user", "assistant"}:
+                continue
+            label = "You" if role == "user" else "Nexa AI"
+            self._append_message(label, self._history_message_text(message.get("content", "")), role)
+        self.chat.see("end")
+
+    def open_history(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · Chat History")
+        window.geometry("700x560")
+        window.configure(bg=self.BG)
+        tk.Label(window, text="Conversation history", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=20, pady=(18, 4))
+        tk.Label(window, text="Chats are saved locally on this computer.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=(0, 12))
+
+        body = tk.Frame(window, bg=self.BG)
+        body.pack(fill="both", expand=True, padx=16, pady=4)
+        listing = tk.Listbox(
+            body, bg=self.PANEL, fg=self.TEXT, selectbackground=self.THEMES[self.theme_name]["SELECT"],
+            selectforeground=self.TEXT, relief="flat", borderwidth=0,
+            font=("Segoe UI", 10), activestyle="none",
+        )
+        listing.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=listing.yview)
+        scroll.pack(side="right", fill="y")
+        listing.configure(yscrollcommand=scroll.set)
+
+        items = self.history_store.list_conversations()
+        for item in items:
+            stamp = item.get("updated_at", "").replace("T", " ")[:16]
+            listing.insert("end", f"{item['title']}   ·   {stamp}   ·   {item['message_count']} messages")
+        if not items:
+            listing.insert("end", "No saved conversations yet.")
+            listing.configure(state="disabled")
+
+        def selected_item():
+            selection = listing.curselection()
+            if not selection or not items:
+                return None
+            return items[selection[0]]
+
+        buttons = tk.Frame(window, bg=self.BG)
+        buttons.pack(fill="x", padx=18, pady=(10, 18))
+
+        def load_selected():
+            item = selected_item()
+            if not item:
+                return
+            try:
+                data = self.history_store.load(item["id"])
+                self.messages = data["messages"]
+                self.conversation_id = data["id"]
+                self.conversation_title = data.get("title", "Conversation")
+                self._render_conversation(self.messages)
+                self.pending_files.clear()
+                self._refresh_attachments()
+                window.destroy()
+            except Exception as exc:
+                messagebox.showerror("History could not be opened", str(exc), parent=window)
+
+        def delete_selected():
+            item = selected_item()
+            if not item:
+                return
+            if not messagebox.askyesno("Delete conversation", f"Delete '{item['title']}' from local history?", parent=window):
+                return
+            try:
+                self.history_store.delete(item["id"])
+                listing.delete(listing.curselection()[0])
+                items.remove(item)
+                if not items:
+                    listing.configure(state="normal")
+                    listing.insert("end", "No saved conversations yet.")
+                    listing.configure(state="disabled")
+            except Exception as exc:
+                messagebox.showerror("Delete failed", str(exc), parent=window)
+
+        ttk.Button(buttons, text="Open conversation", style="Accent.TButton", command=load_selected).pack(side="left")
+        ttk.Button(buttons, text="Delete", style="Nexa.TButton", command=delete_selected).pack(side="left", padx=8)
+        ttk.Button(buttons, text="Close", style="Nexa.TButton", command=window.destroy).pack(side="right")
+        listing.bind("<Double-Button-1>", lambda _event: load_selected())
+
     def new_conversation(self) -> None:
-        if self.busy:
+        if self.busy or self.uploading:
             return
+        self._save_chat()
+        self.conversation_id = uuid4().hex
+        self.conversation_title = "New conversation"
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.chat.configure(state="normal")
         self.chat.delete("1.0", "end")
@@ -747,8 +902,274 @@ class NexaDesktop:
         self._refresh_attachments()
         self._append_message("Nexa AI", "New conversation started. What would you like to work on?", "assistant")
 
+    def toggle_voice_chat(self) -> None:
+        if not self.ready or self.busy or self.uploading:
+            return
+        if self.recording:
+            self._stop_voice_recording()
+            return
+
+        try:
+            import sounddevice as sd
+            import numpy as np  # noqa: F401
+        except Exception as exc:
+            messagebox.showerror("Voice chat unavailable", f"Microphone support could not load: {exc}")
+            return
+
+        self.recording_chunks = []
+        self.recording = True
+        self.voice_button.configure(text="■ Stop & send", state="normal")
+        self.send_button.configure(state="disabled")
+        self.status_var.set("● Listening · speak now")
+        self.status_label.configure(fg="#d6b66d")
+
+        def audio_callback(indata, frames, time_info, status):
+            if status:
+                self.log_handle.write(f"Microphone status: {status}\n")
+            with self.recording_lock:
+                if self.recording:
+                    self.recording_chunks.append(indata.copy())
+
+        try:
+            self.recording_stream = sd.InputStream(
+                samplerate=16000, channels=1, dtype="int16",
+                blocksize=0, callback=audio_callback,
+            )
+            self.recording_stream.start()
+        except Exception as exc:
+            self.recording = False
+            self.recording_stream = None
+            self.voice_button.configure(text="🎙 Voice chat")
+            self.send_button.configure(state="normal")
+            messagebox.showerror("Microphone error", str(exc))
+
+    def _stop_voice_recording(self) -> None:
+        stream = self.recording_stream
+        self.recording = False
+        self.recording_stream = None
+        try:
+            if stream:
+                stream.stop()
+                stream.close()
+            import numpy as np
+            with self.recording_lock:
+                chunks = list(self.recording_chunks)
+                self.recording_chunks.clear()
+            if not chunks:
+                raise RuntimeError("No microphone audio was captured.")
+            audio = np.concatenate(chunks, axis=0).astype("int16", copy=False)
+            if len(audio) < 8000:
+                raise RuntimeError("The recording was too short. Please speak for at least half a second.")
+            voice_dir = self.app_root / "Voice" / "recordings"
+            voice_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = voice_dir / f"voice-{uuid4().hex}.wav"
+            with wave.open(str(audio_path), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(16000)
+                wav.writeframes(audio.tobytes())
+        except Exception as exc:
+            self.voice_button.configure(text="🎙 Voice chat")
+            self.send_button.configure(state="normal" if self.ready else "disabled")
+            self.status_var.set("Voice recording failed")
+            messagebox.showerror("Voice chat", str(exc))
+            return
+
+        self.voice_button.configure(state="disabled", text="Transcribing…")
+        self.status_var.set("Preparing offline speech recognition…")
+        threading.Thread(target=self._transcribe_voice, args=(audio_path,), daemon=True, name="NexaWhisper").start()
+
+    def _transcribe_voice(self, audio_path: Path) -> None:
+        try:
+            from faster_whisper import WhisperModel
+            voice_dir = self.app_root / "Voice"
+            model_dir = voice_dir / "whisper-small"
+            model_dir.mkdir(parents=True, exist_ok=True)
+
+            if self.whisper_model is None:
+                self.events.put(("voice_status", "Loading Whisper small model · first use downloads about 500 MB"))
+                previous_hf = os.environ.pop("HF_HUB_OFFLINE", None)
+                previous_transformers = os.environ.pop("TRANSFORMERS_OFFLINE", None)
+                try:
+                    # Model download is performed only on first use; subsequent recognition is local.
+                    self.whisper_model = WhisperModel(
+                        "small", device="cpu", compute_type="int8", download_root=str(model_dir)
+                    )
+                finally:
+                    if previous_hf is not None:
+                        os.environ["HF_HUB_OFFLINE"] = previous_hf
+                    if previous_transformers is not None:
+                        os.environ["TRANSFORMERS_OFFLINE"] = previous_transformers
+
+            self.events.put(("voice_status", "Transcribing locally…"))
+            segments, info = self.whisper_model.transcribe(
+                str(audio_path), beam_size=3, vad_filter=True, condition_on_previous_text=False
+            )
+            transcript = " ".join(segment.text.strip() for segment in segments).strip()
+            if not transcript:
+                raise RuntimeError("No speech was recognized. Try speaking more clearly or closer to the microphone.")
+            self.events.put(("voice_transcribed", transcript))
+        except Exception as exc:
+            self.events.put(("voice_error", str(exc)))
+        finally:
+            try:
+                audio_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _speak_text(self, text: str) -> None:
+        reply = str(text).strip()
+        if not reply:
+            return
+
+        def worker() -> None:
+            try:
+                import pyttsx3
+                engine = pyttsx3.init()
+                engine.setProperty("rate", 175)
+                # Prefer an installed Bengali voice when available; otherwise use the Windows default voice.
+                if any("\u0980" <= char <= "\u09ff" for char in reply):
+                    for voice in engine.getProperty("voices"):
+                        voice_info = " ".join([str(getattr(voice, "id", "")), str(getattr(voice, "name", "")), str(getattr(voice, "languages", ""))]).lower()
+                        if "bengali" in voice_info or "bangla" in voice_info or "bn" in voice_info:
+                            engine.setProperty("voice", voice.id)
+                            break
+                engine.say(reply[:5000])
+                engine.runAndWait()
+                engine.stop()
+            except Exception as exc:
+                self.root.after(0, lambda e=str(exc): self.status_var.set(f"Speech output unavailable: {e[:100]}"))
+
+        threading.Thread(target=worker, daemon=True, name="NexaSpeechOutput").start()
+
+    def open_n8n_studio(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · n8n Workflow Studio")
+        window.geometry("980x760")
+        window.minsize(760, 600)
+        window.configure(bg=self.BG)
+
+        tk.Label(window, text="n8n Workflow Studio", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 19)).pack(anchor="w", padx=20, pady=(18, 3))
+        tk.Label(
+            window,
+            text="Describe an automation in Bangla or English. The active local model creates an n8n workflow JSON you can export and import into your own n8n instance.",
+            bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9), wraplength=900, justify="left",
+        ).pack(anchor="w", padx=20, pady=(0, 12))
+
+        tk.Label(window, text="What should the workflow do?", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 10)).pack(anchor="w", padx=20)
+        prompt_box = tk.Text(window, height=6, wrap="word", bg=self.PANEL, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", font=("Segoe UI", 10), padx=12, pady=10)
+        prompt_box.pack(fill="x", padx=20, pady=(5, 10))
+
+        actions = tk.Frame(window, bg=self.BG)
+        actions.pack(fill="x", padx=20, pady=(0, 8))
+        status = tk.Label(actions, text=f"Local model: {self.current_model_name}", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
+        status.pack(side="left")
+        output = ScrolledText(window, wrap="word", bg=self.PANEL, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", font=("Consolas", 9), padx=12, pady=10)
+        output.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        output.insert("1.0", "Your generated n8n workflow JSON will appear here.")
+        output.configure(state="disabled")
+        result_state: dict[str, Any] = {"workflow": None}
+
+        def set_output(value: str) -> None:
+            output.configure(state="normal")
+            output.delete("1.0", "end")
+            output.insert("1.0", value)
+            output.configure(state="disabled")
+
+        def generate() -> None:
+            if not self.ready or self.busy:
+                messagebox.showwarning("Local model busy", "Wait until Nexa AI is ready before generating a workflow.", parent=window)
+                return
+            requirement = prompt_box.get("1.0", "end-1c").strip()
+            try:
+                messages = build_n8n_messages(requirement)
+            except Exception as exc:
+                messagebox.showerror("Workflow description", str(exc), parent=window)
+                return
+            generate_button.configure(state="disabled", text="Generating…")
+            export_button.configure(state="disabled")
+            copy_button.configure(state="disabled")
+            status.configure(text=f"Generating with {self.current_model_name} · offline…", fg=self.ACCENT)
+            result_state["workflow"] = None
+
+            def worker() -> None:
+                try:
+                    payload = {
+                        "model": self.current_model_id,
+                        "messages": messages,
+                        "stream": False,
+                        "temperature": 0.15,
+                        "max_tokens": 4096,
+                    }
+                    with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
+                        response = client.post(f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    raw = data["choices"][0]["message"]["content"]
+                    workflow = extract_n8n_json(raw)
+                    rendered = workflow_json_text(workflow)
+                    self.root.after(0, lambda: finish_success(workflow, rendered))
+                except Exception as exc:
+                    error_text = str(exc)
+                    self.root.after(0, lambda e=error_text: finish_error(e))
+
+            def finish_success(workflow: dict[str, Any], rendered: str) -> None:
+                if not window.winfo_exists():
+                    return
+                result_state["workflow"] = workflow
+                set_output(rendered)
+                generate_button.configure(state="normal", text="Generate workflow")
+                export_button.configure(state="normal")
+                copy_button.configure(state="normal")
+                status.configure(text="✓ JSON structure validated · not executed", fg="#8fbd92")
+
+            def finish_error(error_text: str) -> None:
+                if not window.winfo_exists():
+                    return
+                generate_button.configure(state="normal", text="Try again")
+                status.configure(text="Workflow generation failed", fg="#dd8d85")
+                messagebox.showerror("Could not create workflow", error_text, parent=window)
+
+            threading.Thread(target=worker, daemon=True, name="NexaN8nStudio").start()
+
+        def export_workflow() -> None:
+            workflow = result_state.get("workflow")
+            if not workflow:
+                return
+            path = filedialog.asksaveasfilename(
+                parent=window, title="Export n8n workflow", defaultextension=".json",
+                initialfile="nexa-n8n-workflow.json", filetypes=[("n8n workflow JSON", "*.json")],
+            )
+            if not path:
+                return
+            try:
+                Path(path).write_text(workflow_json_text(workflow), encoding="utf-8")
+                status.configure(text=f"Saved: {Path(path).name}", fg="#8fbd92")
+            except OSError as exc:
+                messagebox.showerror("Export failed", str(exc), parent=window)
+
+        def copy_workflow() -> None:
+            workflow = result_state.get("workflow")
+            if not workflow:
+                return
+            window.clipboard_clear()
+            window.clipboard_append(workflow_json_text(workflow))
+            status.configure(text="Workflow JSON copied to clipboard", fg="#8fbd92")
+
+        generate_button = ttk.Button(actions, text="Generate workflow", style="Accent.TButton", command=generate)
+        generate_button.pack(side="right")
+        export_button = ttk.Button(actions, text="Export JSON", style="Nexa.TButton", command=export_workflow, state="disabled")
+        export_button.pack(side="right", padx=(0, 8))
+        copy_button = ttk.Button(actions, text="Copy JSON", style="Nexa.TButton", command=copy_workflow, state="disabled")
+        copy_button.pack(side="right", padx=(0, 8))
+
     def on_close(self) -> None:
         try:
+            self._save_chat()
+            if self.recording_stream:
+                self.recording = False
+                self.recording_stream.stop()
+                self.recording_stream.close()
             if self.api_server:
                 self.api_server.should_exit = True
             if self.llama_process and self.llama_process.poll() is None:
