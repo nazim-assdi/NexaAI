@@ -11,6 +11,8 @@ from nexa_ai.local_backend import _parse_content, prepare_messages
 from nexa_ai.model_library import MODEL_CATALOG
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
+from nexa_ai.history_store import HistoryStore
+from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 
 
 class CoreTests(unittest.TestCase):
@@ -33,8 +35,14 @@ class CoreTests(unittest.TestCase):
 
     def test_model_catalog_contains_multiple_roles(self):
         roles = {item["role"] for item in MODEL_CATALOG.values()}
-        self.assertTrue({"Chat", "Coding", "Vision"}.issubset(roles))
+        self.assertTrue({"Chat", "Coding", "Vision", "All-rounder"}.issubset(roles))
         self.assertIn("mmproj_filename", MODEL_CATALOG["qwen2.5-vl-3b"])
+
+    def test_qwen3_is_recommended_and_checksum_pinned(self):
+        qwen = MODEL_CATALOG["qwen3-4b"]
+        self.assertTrue(qwen["recommended"])
+        self.assertEqual(qwen["sha256"], "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5")
+        self.assertIn("Q4_K_M", qwen["filename"])
 
     def test_image_attachment_requires_vision_model(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -86,6 +94,56 @@ class CoreTests(unittest.TestCase):
             manager.set_enabled(plugin_id, True)
             context = manager.load_enabled_imported_plugins()
             self.assertEqual(context.commands["example.run"](), "ok")
+
+    def test_history_store_saves_lists_loads_and_deletes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = HistoryStore(Path(folder))
+            conversation_id = "a" * 32
+            messages = [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "Build an n8n workflow"},
+                {"role": "assistant", "content": "Here is the plan."},
+            ]
+            store.save(conversation_id, "n8n workflow", messages, "nexa-qwen3-4b")
+            items = store.list_conversations()
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0]["title"], "n8n workflow")
+            loaded = store.load(conversation_id)
+            self.assertEqual(loaded["messages"], messages)
+            self.assertTrue(store.delete(conversation_id))
+            self.assertEqual(store.list_conversations(), [])
+
+    def test_history_store_rejects_path_traversal_ids(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = HistoryStore(Path(folder))
+            with self.assertRaises(ValueError):
+                store.load("../secrets")
+
+    def test_n8n_prompt_is_local_and_requires_description(self):
+        with self.assertRaises(ValueError):
+            build_n8n_messages("   ")
+        messages = build_n8n_messages("Create a local file watcher")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("n8n workflow", messages[0]["content"].lower())
+
+    def test_n8n_json_extraction_from_markdown(self):
+        raw = """Here is your workflow:
+\x60\x60\x60json
+{"name":"Local demo","nodes":[{"id":"1","name":"Manual","type":"n8n-nodes-base.manualTrigger","typeVersion":1,"position":[240,300],"parameters":{}}],"connections":{},"settings":{"executionOrder":"v1"}}
+\x60\x60\x60
+"""
+        workflow = extract_n8n_json(raw)
+        self.assertEqual(workflow["name"], "Local demo")
+        self.assertIn('"nodes"', workflow_json_text(workflow))
+
+    def test_n8n_validator_rejects_dangling_connection(self):
+        raw = {
+            "name": "Broken",
+            "nodes": [{"name": "Manual", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 0], "parameters": {}}],
+            "connections": {"Manual": {"main": [[{"node": "Missing", "type": "main", "index": 0}]]}},
+        }
+        with self.assertRaisesRegex(ValueError, "unknown node"):
+            extract_n8n_json(json.dumps(raw))
 
     def test_plugin_zip_path_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
