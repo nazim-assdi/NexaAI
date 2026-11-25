@@ -1254,35 +1254,61 @@ class NexaDesktop:
         try:
             import sounddevice as sd
             import numpy as np  # noqa: F401
+            default_device = sd.default.device
+            input_device = default_device[0] if isinstance(default_device, (tuple, list)) else default_device
+            if input_device is None or int(input_device) < 0:
+                input_device = None
+            device_info = sd.query_devices(input_device, kind="input")
+            if int(device_info.get("max_input_channels", 0)) < 1:
+                raise RuntimeError("Windows has no microphone input device selected. Connect or enable a microphone in Sound settings.")
+            native_rate = int(round(float(device_info.get("default_samplerate", 48000))))
+            candidates = list(dict.fromkeys([native_rate, 48000, 44100, 32000, 24000, 16000]))
+            capture_rate = None
+            last_error = None
+            for candidate in candidates:
+                try:
+                    sd.check_input_settings(device=input_device, channels=1, samplerate=candidate, dtype="int16")
+                    capture_rate = candidate
+                    break
+                except Exception as exc:
+                    last_error = exc
+            if capture_rate is None:
+                raise RuntimeError(f"The selected microphone does not support a usable sample rate. {last_error}")
         except Exception as exc:
-            messagebox.showerror("Voice chat unavailable", f"Microphone support could not load: {exc}")
+            messagebox.showerror(
+                "Voice chat unavailable",
+                f"Could not open the Windows microphone. Check Settings → System → Sound → Input and microphone privacy permissions.\n\n{exc}",
+            )
             return
 
         self.recording_chunks = []
+        self._voice_capture_rate = capture_rate
         self.recording = True
         self.voice_button.configure(text="■ Stop & send", state="normal")
         self.send_button.configure(state="disabled")
-        self.status_var.set("● Listening · speak now")
+        self.status_var.set(f"● Listening · microphone {capture_rate} Hz · speak now")
         self.status_label.configure(fg="#d6b66d")
 
         def audio_callback(indata, frames, time_info, status):
             if status:
-                self.log_handle.write(f"Microphone status: {status}\n")
+                with self.recording_lock:
+                    self.recording_warnings = str(status)
             with self.recording_lock:
                 if self.recording:
                     self.recording_chunks.append(indata.copy())
 
         try:
             self.recording_stream = sd.InputStream(
-                samplerate=16000, channels=1, dtype="int16",
-                blocksize=0, callback=audio_callback,
+                device=input_device, samplerate=capture_rate, channels=1,
+                dtype="int16", blocksize=0, callback=audio_callback,
             )
             self.recording_stream.start()
         except Exception as exc:
             self.recording = False
             self.recording_stream = None
-            self.voice_button.configure(text="🎙 Voice chat")
-            self.send_button.configure(state="normal")
+            self.voice_button.configure(text="🎙 Voice", state="normal")
+            self.send_button.configure(state="normal" if self.ready else "disabled")
+            self.status_var.set("Microphone could not start")
             messagebox.showerror("Microphone error", str(exc))
 
     def _stop_voice_recording(self) -> None:
@@ -1296,12 +1322,16 @@ class NexaDesktop:
             import numpy as np
             with self.recording_lock:
                 chunks = list(self.recording_chunks)
+                warning = getattr(self, "recording_warnings", "")
                 self.recording_chunks.clear()
             if not chunks:
-                raise RuntimeError("No microphone audio was captured.")
-            audio = np.concatenate(chunks, axis=0).astype("int16", copy=False)
+                raise RuntimeError("No audio was captured. Check that Windows selected the correct microphone and that microphone access is enabled.")
+            native_audio = np.concatenate(chunks, axis=0).astype("int16", copy=False)
+            audio = resample_mono_int16(native_audio, self._voice_capture_rate, 16000)
             if len(audio) < 8000:
-                raise RuntimeError("The recording was too short. Please speak for at least half a second.")
+                raise RuntimeError("The recording was too short. Speak for at least half a second, then press Stop & send.")
+            if warning:
+                self.log_handle.write(f"Microphone warning: {warning}\n")
             voice_dir = self.app_root / "Voice" / "recordings"
             voice_dir.mkdir(parents=True, exist_ok=True)
             audio_path = voice_dir / f"voice-{uuid4().hex}.wav"
@@ -1311,16 +1341,16 @@ class NexaDesktop:
                 wav.setframerate(16000)
                 wav.writeframes(audio.tobytes())
         except Exception as exc:
-            self.voice_button.configure(text="🎙 Voice chat")
+            self.voice_button.configure(text="🎙 Voice", state="normal")
             self.send_button.configure(state="normal" if self.ready else "disabled")
             self.status_var.set("Voice recording failed")
+            self.status_label.configure(fg="#ff8d8d")
             messagebox.showerror("Voice chat", str(exc))
             return
 
-        self.voice_button.configure(state="disabled", text="Transcribing…")
+        self.voice_button.configure(state="disabled", text="Loading voice…")
         self.status_var.set("Preparing offline speech recognition…")
         threading.Thread(target=self._transcribe_voice, args=(audio_path,), daemon=True, name="NexaWhisper").start()
-
     def _transcribe_voice(self, audio_path: Path) -> None:
         try:
             from faster_whisper import WhisperModel
@@ -1335,7 +1365,8 @@ class NexaDesktop:
                 try:
                     # Model download is performed only on first use; subsequent recognition is local.
                     self.whisper_model = WhisperModel(
-                        "base", device="cpu", compute_type="int8", download_root=str(model_dir)
+                        "base", device="cpu", compute_type="int8", download_root=str(model_dir),
+                        cpu_threads=max(1, min(2, os.cpu_count() or 2)), num_workers=1,
                     )
                 finally:
                     if previous_hf is not None:
@@ -1345,7 +1376,8 @@ class NexaDesktop:
 
             self.events.put(("voice_status", "Transcribing locally…"))
             segments, info = self.whisper_model.transcribe(
-                str(audio_path), beam_size=3, vad_filter=True, condition_on_previous_text=False
+                str(audio_path), beam_size=1, vad_filter=True,
+                condition_on_previous_text=False, without_timestamps=True,
             )
             transcript = " ".join(segment.text.strip() for segment in segments).strip()
             if not transcript:
@@ -1365,7 +1397,11 @@ class NexaDesktop:
             return
 
         def worker() -> None:
+            com_initialized = False
             try:
+                import comtypes
+                comtypes.CoInitialize()
+                com_initialized = True
                 import pyttsx3
                 engine = pyttsx3.init()
                 engine.setProperty("rate", 175)
@@ -1380,7 +1416,16 @@ class NexaDesktop:
                 engine.runAndWait()
                 engine.stop()
             except Exception as exc:
-                self.root.after(0, lambda e=str(exc): self.status_var.set(f"Speech output unavailable: {e[:100]}"))
+                try:
+                    self.root.after(0, lambda e=str(exc): self.status_var.set(f"Speech output unavailable: {e[:100]}"))
+                except tk.TclError:
+                    pass
+            finally:
+                if com_initialized:
+                    try:
+                        comtypes.CoUninitialize()
+                    except Exception:
+                        pass
 
         threading.Thread(target=worker, daemon=True, name="NexaSpeechOutput").start()
 
