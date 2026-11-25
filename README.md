@@ -23,7 +23,7 @@ The installer includes the desktop application and the llama.cpp Windows CPU run
 
 The app downloads and checks this exact file automatically at first start. It is the single model used for chat, coding, debugging, reasoning and n8n workflow generation. NexaAI does not offer model switching or optional alternative LLM downloads.
 
-The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It uses CPU-only inference, mmap loading and fewer threads on older processors. Each Windows release runs an end-to-end test with the exact Qwen3 GGUF, server health endpoint and local chat completion. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
+The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It uses CPU-only inference, mmap loading and fewer threads on older processors. Runtime-affecting Windows releases run an end-to-end test with the exact Qwen3 GGUF, server health endpoint and local chat completion. UI-only releases reuse the latest successful full-model runtime validation and run the complete unit-test suite. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
 
 ## Chat and coding
 
