@@ -27,7 +27,6 @@ from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit
 from nexa_ai.voice_utils import resample_mono_int16
-from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
 
 APP_NAME = "Nexa AI"
 APP_VERSION = "1.7.0"
@@ -142,6 +141,7 @@ class NexaDesktop:
         self.theme_name = self._load_theme_preference()
         self.response_profile = self._load_response_preference()
         self._voice_capture_rate = 16000
+        self.recording_warnings = ""
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
         self.current_model_key = QWEN3_MODEL_KEY
@@ -1282,6 +1282,7 @@ class NexaDesktop:
             return
 
         self.recording_chunks = []
+        self.recording_warnings = ""
         self._voice_capture_rate = capture_rate
         self.recording = True
         self.voice_button.configure(text="■ Stop & send", state="normal")
