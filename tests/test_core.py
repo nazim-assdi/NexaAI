@@ -8,12 +8,13 @@ from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
 from nexa_ai.local_backend import _parse_content, prepare_messages, _options, parse_ollama_stream_chunk
-from nexa_ai.ollama_runtime import OLLAMA_MODEL, OLLAMA_MODEL_SIZE, OllamaNotInstalled, OllamaRuntime
+from nexa_ai.ollama_runtime import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_MODEL_SIZE, OllamaNotInstalled, OllamaRuntime
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
+from nexa_ai.api import ChatRequest
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
 from nexa_ai.chat_layout import build_chat_context, response_token_limit, enqueue_followup, take_followup
@@ -46,8 +47,19 @@ class CoreTests(unittest.TestCase):
         runtime = OllamaRuntime()
         with patch.object(runtime, "server_ready", return_value=False):
             with patch.object(OllamaRuntime, "find_executable", return_value=None):
-                with self.assertRaisesRegex(OllamaNotInstalled, "ollama.com/download/windows"):
+                with self.assertRaisesRegex(OllamaNotInstalled, "bundled Ollama runtime is missing"):
                     runtime.ensure_server()
+
+    def test_ollama_runtime_uses_nexa_private_port_and_model_store(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = OllamaRuntime(models_dir=Path(folder) / "engine-models")
+            self.assertEqual(runtime.base_url, OLLAMA_BASE_URL)
+            self.assertEqual(OLLAMA_BASE_URL, "http://127.0.0.1:11439")
+            self.assertEqual(runtime.models_dir, Path(folder) / "engine-models")
+
+    def test_chat_api_request_has_no_cloud_provider_field(self):
+        request = ChatRequest(messages=[{"role": "user", "content": "hello"}])
+        self.assertFalse(hasattr(request, "provider"))
 
     def test_ollama_runtime_does_not_pull_an_already_installed_model(self):
         runtime = OllamaRuntime()

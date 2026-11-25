@@ -1,14 +1,14 @@
 [Setup]
 AppId={{D32E4A64-9A42-4E8D-AC79-1AFD64FB1A10}
 AppName=Nexa AI
-AppVersion=1.9.0
+AppVersion=2.0.0
 AppPublisher=NTech
 DefaultDirName={localappdata}\Programs\NexaAI
 DefaultGroupName=Nexa AI
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\output
-OutputBaseFilename=NexaAI-Setup-1.9.0-Windows-x64
+OutputBaseFilename=NexaAI-Setup-2.0.0-Windows-x64
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
@@ -20,16 +20,17 @@ CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
 DiskSpanning=no
-VersionInfoVersion=1.9.0.0
+VersionInfoVersion=2.0.0.0
 VersionInfoProductName=Nexa AI
-VersionInfoDescription=Gemma Offline + FreeLM Cloud AI, voice and n8n desktop assistant
+VersionInfoDescription=Bundled Ollama + Gemma 3 1B Offline Assistant
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-
 [Files]
 Source: "..\dist\NexaAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build-assets\ollama\*"; DestDir: "{app}\runtime\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build-assets\ollama-models\*"; DestDir: "{localappdata}\NexaAI\Engine\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\nexa-ai.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 

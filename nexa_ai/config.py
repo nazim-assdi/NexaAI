@@ -12,7 +12,7 @@ load_dotenv(override=False)
 
 @dataclass(frozen=True)
 class Settings:
-    local_base_url: str = os.getenv("NEXA_LOCAL_BASE_URL", "http://127.0.0.1:11434").strip().rstrip("/")
+    local_base_url: str = os.getenv("NEXA_LOCAL_BASE_URL", "http://127.0.0.1:11439").strip().rstrip("/")
     local_api_key: str = os.getenv("NEXA_LOCAL_API_KEY", "").strip()
     model: str = os.getenv("NEXA_MODEL", "gemma3:1b").strip()
     host: str = os.getenv("NEXA_HOST", "127.0.0.1").strip()

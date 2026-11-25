@@ -9,14 +9,14 @@ from nexa_ai.ollama_runtime import OLLAMA_BASE_URL, OLLAMA_MODEL, OllamaRuntime
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke-test the local Ollama Gemma 3 1B runtime.")
+    parser = argparse.ArgumentParser(description="Smoke-test the bundled NexaAI Ollama Gemma 3 1B runtime.")
     parser.add_argument("--base-url", default=OLLAMA_BASE_URL)
     args = parser.parse_args()
     runtime = OllamaRuntime(base_url=args.base_url)
     if not runtime.server_ready():
-        raise RuntimeError("Ollama is not running. Install/start Ollama before running this optional smoke test.")
+        raise RuntimeError("The bundled NexaAI Ollama service is not running. Start NexaAI before this optional smoke test.")
     if OLLAMA_MODEL not in runtime.installed_models():
-        raise RuntimeError("Gemma 3 1B is not installed. Pull gemma3:1b first.")
+        raise RuntimeError("Gemma 3 1B is missing from the NexaAI engine model store.")
     payload = {
         "model": OLLAMA_MODEL,
         "messages": [{"role": "user", "content": "Reply with exactly NEXA_OK"}],

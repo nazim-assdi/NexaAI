@@ -15,3 +15,5 @@ runtime/
 models/*.gguf
 .DS_Store
 Thumbs.db
+
+build-assets/

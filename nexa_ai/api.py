@@ -23,7 +23,6 @@ class ChatRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
-    provider: str = "local"
 
 
 def _error(message: str, status_code: int = 400):
@@ -68,18 +67,9 @@ def chat_completions(request: ChatRequest):
     if not request.messages:
         return _error("messages must contain at least one message.")
     request_id = f"chatcmpl-{uuid4().hex[:16]}"
-    provider = str(request.provider or "local").strip().lower()
-    if provider not in {"local", "freelm"}:
-        return _error("provider must be either 'local' or 'freelm'.")
-    if provider == "freelm":
-        from . import cloud_runtime
-        model = request.model if request.model and request.model != settings.model else "chat:large"
-        generate = cloud_runtime.generate_text
-        stream = cloud_runtime.stream_text
-    else:
-        model = request.model or settings.model
-        generate = local_backend.generate_text
-        stream = local_backend.stream_text
+    model = request.model or settings.model
+    generate = local_backend.generate_text
+    stream = local_backend.stream_text
 
     if request.stream:
         def event_stream():

@@ -1,33 +1,38 @@
-NexaAI is an offline-first Windows desktop application and uses third-party software and a locally downloaded model.
+NexaAI is a Windows desktop application. The NexaAI installer includes the Ollama Windows runtime and Google Gemma 3 1B local model.
 
-1. Ollama (external prerequisite, not redistributed by NexaAI)
+1. Ollama Windows standalone runtime
    Project: https://github.com/ollama/ollama
-   Download: https://ollama.com/download/windows
-   Ollama must be installed separately by the user. NexaAI connects to its local API at 127.0.0.1:11434.
+   Documentation: https://github.com/ollama/ollama/blob/main/docs/windows.mdx
+   Bundled release asset: ollama-windows-amd64-rocm.zip from Ollama v0.40.18
+   The Ollama runtime is embedded in the NexaAI installer under the application runtime folder.
+   The upstream license is included as LICENSE alongside the bundled runtime.
+   NexaAI starts Ollama as a local process and connects only to its app-specific loopback
+   API at 127.0.0.1:11439.
 
-2. Google Gemma 3 1B (downloaded by Ollama on first launch)
+2. Google Gemma 3 1B
    Model library: https://ollama.com/library/gemma3
    Model tag: gemma3:1b
-   Approximate download: 806 MB
+   Approximate model download: 806 MB
    Terms: https://ai.google.dev/gemma/terms
-   Gemma 3 1B is the single assistant model configured by this NexaAI edition.
+   The model files are included in the NexaAI Windows installer and installed for the
+   current Windows user. Gemma 3 1B is the sole chat and coding assistant model in this edition.
 
 3. Python dependencies
    FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,
    NumPy, faster-whisper, CTranslate2, av, sounddevice, PortAudio, pyttsx3,
-   comtypes and imageio-ffmpeg retain their respective upstream licences.
-   See each upstream project for licence terms.
+   comtypes and imageio-ffmpeg retain their respective upstream licenses.
+   See each upstream project for license terms.
 
 4. Whisper base speech-recognition model (downloaded on first Voice Chat use)
    Project: https://github.com/openai/whisper
-   Licence: MIT (see upstream project/model distribution).
+   License: MIT (see upstream project/model distribution).
    This is a speech-to-text component for voice input, not another chat LLM.
 
 5. imageio-ffmpeg
    Project: https://github.com/imageio/imageio-ffmpeg
    License: BSD 2-Clause.
    The Windows wheel includes an FFmpeg executable obtained from upstream builds.
-   FFmpeg's own licence depends on the options enabled in the binary; see
+   FFmpeg's own license depends on the options enabled in the binary; see
    https://ffmpeg.org/legal.html and the upstream build metadata.
 
 6. Windows SAPI voices
@@ -38,31 +43,3 @@ NexaAI is an offline-first Windows desktop application and uses third-party soft
    Project: https://python-pillow.org/
    License: HPND. Used only in the Windows build pipeline to create multi-resolution
    application and installer icons; Pillow is not bundled with NexaAI.
-
-FreeLM
--------
-FreeLM is an open-source multi-provider LLM routing library used for optional
-cloud inference in NexaAI. FreeLM is Copyright (c) 2026 Shihab Shahriar Antor /
-Shahriar Labs and is distributed under the MIT License.
-
-MIT License
-
-Copyright (c) 2026 Shihab Shahriar Antor / Shahriar Labs
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
