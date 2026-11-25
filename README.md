@@ -1,11 +1,11 @@
-# Nexa AI — NTech Edition · Verified Qwen3 Offline Assistant
+# Nexa AI 1.5.1 — NTech Edition · Verified Qwen3 Offline Assistant
 
 Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.5.0-Windows-x64.exe\`.
+2. Download \`NexaAI-Setup-1.5.1-Windows-x64.exe\`.
 3. Install and launch Nexa AI.
 4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
 

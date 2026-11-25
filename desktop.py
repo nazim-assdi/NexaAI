@@ -26,7 +26,7 @@ from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_js
 from nexa_ai.server_config import build_uvicorn_config
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
