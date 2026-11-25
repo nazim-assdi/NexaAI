@@ -1,11 +1,11 @@
-# Nexa AI 1.6.0 — NTech Edition · Verified Qwen3 Offline Assistant
+# Nexa AI 1.7.0 — NTech Edition · Verified Qwen3 Offline Assistant
 
 Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.6.0-Windows-x64.exe\`.
+2. Download \`NexaAI-Setup-1.7.0-Windows-x64.exe\`.
 3. Install and launch Nexa AI.
 4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
 
@@ -27,7 +27,21 @@ The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K 
 
 ## Chat and coding
 
-NexaAI 1.6.0 uses a modern assistant-style workspace: a compact left navigation rail with **New chat**, conversation search, n8n tools, plugins and recent chats; a central scrollable conversation timeline; a centered welcome screen with prompt suggestions; and a rounded-style message composer with attachment, voice and send controls. User messages are shown in right-aligned cards while assistant replies stream in the timeline. **NTech Chat Dark** is the default theme for new installations; the existing Eye Comfort and OLED themes remain available.
+NexaAI 1.7.0 uses a modern assistant workspace: a left navigation rail with new chat, search, tools and recent conversations; a central scrollable conversation timeline; welcome suggestions; and a rounded composer with attachment, voice and send controls. User messages appear on the right while assistant responses stream on the left. Assistant messages include a **Copy answer** action. Headings and fenced code sections receive light formatting.
+
+## Performance and response controls
+
+- **Quick** is the default response profile for older CPUs. **Balanced** and **Detailed** allow longer replies when needed.
+- Chat inference keeps the system prompt and the latest eight conversation messages for quicker prompt processing on long chats. The full conversation remains saved locally in Chat History.
+- Streaming updates are batched before repainting the chat window to reduce UI overhead.
+- Long answers expand the conversation feed without the old 120-line display ceiling. Use the chat scrollbar to read the full response and **Copy answer** to copy it all.
+- Headings and fenced code blocks receive readable formatting.
+
+## Voice reliability
+
+- Microphone capture selects a sample rate supported by the current Windows input device, then resamples the recording to 16 kHz for Whisper.
+- Whisper base runs with CPU int8, a small CPU thread count and beam size 1 for quicker transcription on older processors.
+- Windows speech output initializes COM on its worker thread before starting SAPI.
 
 ## Chat History
 

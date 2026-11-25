@@ -694,7 +694,7 @@ class NexaDesktop:
             widget.update_idletasks()
             display_lines = widget.count("1.0", "end-1c", "displaylines")
             line_count = max(1, int(display_lines[0])) if display_lines else 1
-            widget.configure(height=min(120, line_count), state="disabled")
+            widget.configure(height=line_count, state="disabled")
             self._scroll_chat_to_bottom()
         except tk.TclError:
             self.current_assistant_widget = None
