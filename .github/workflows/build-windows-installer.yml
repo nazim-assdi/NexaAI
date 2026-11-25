@@ -124,19 +124,8 @@ jobs:
           if ((Get-Item $termsPath).Length -lt 4000) { throw "The official Gemma Terms download looks incomplete." }
           if ((Get-Item $policyPath).Length -lt 1000) { throw "The official Gemma Prohibited Use Policy download looks incomplete." }
 
-          $agreement = @"
-NEXAAI GEMMA MODEL INSTALLATION AGREEMENT
-
-NexaAI includes Google Gemma 3 1B model weights. By selecting "I accept the agreement" in this installer and continuing, you agree that your use, reproduction and distribution of Gemma is subject to the complete Gemma Terms of Use and the Gemma Prohibited Use Policy reproduced below. In particular, you must comply with all use restrictions in Section 3.2 of the Gemma Terms of Use. These model terms apply to Gemma only and do not replace the separate notices for other NexaAI components.
-
-==================== COMPLETE GEMMA TERMS OF USE ====================
-
-$(Get-Content -Path $termsPath -Raw)
-
-==================== GEMMA PROHIBITED USE POLICY ====================
-
-$(Get-Content -Path $policyPath -Raw)
-"@
+          $agreementHeader = "NEXAAI GEMMA MODEL INSTALLATION AGREEMENT`r`n`r`nNexaAI includes Google Gemma 3 1B model weights. By selecting I accept the agreement in this installer and continuing, you agree that your use, reproduction and distribution of Gemma is subject to the complete Gemma Terms of Use and the Gemma Prohibited Use Policy reproduced below. In particular, you must comply with all use restrictions in Section 3.2 of the Gemma Terms of Use. These model terms apply to Gemma only and do not replace the separate notices for other NexaAI components.`r`n`r`n==================== COMPLETE GEMMA TERMS OF USE ====================`r`n`r`n"
+          $agreement = $agreementHeader + (Get-Content -Path $termsPath -Raw) + "`r`n`r`n==================== GEMMA PROHIBITED USE POLICY ====================`r`n`r`n" + (Get-Content -Path $policyPath -Raw)
           Set-Content -Path $agreementPath -Value $agreement -Encoding utf8
           Set-Content -Path $noticePath -Value "Gemma is provided under and subject to the Gemma Terms of Use found at gemma.ai/resources/terms" -Encoding utf8
           Write-Host "Prepared official Gemma terms, prohibited-use policy, installer acceptance text and model notice."
