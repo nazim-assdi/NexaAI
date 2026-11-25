@@ -117,7 +117,7 @@ async def upload_file(file: UploadFile = File(...)):
     if not allowed:
         raise HTTPException(
             status_code=415,
-            detail="This single-model edition supports selectable-text PDFs and text/code files. Images and videos are not supported by the Qwen3 4B text model.",
+            detail="This single-model edition supports selectable-text PDFs and text/code files. Images and videos are not supported by the Gemma 3 1B text model.",
         )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

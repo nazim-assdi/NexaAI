@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 import wave
 from pathlib import Path
 from uuid import uuid4
@@ -18,10 +19,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from nexa_ai.model_library import QWEN3_MODEL_KEY, QWEN3_MODEL_ID, QWEN3_MODEL_NAME, QWEN3_MODEL_FILENAME, model_is_installed, download_model, verify_model_file
+from nexa_ai.ollama_runtime import OllamaRuntime, OllamaNotInstalled, OLLAMA_MODEL, OLLAMA_MODEL_NAME, OLLAMA_MODEL_SIZE
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
-from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
@@ -29,8 +29,8 @@ from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.7.0"
-MODEL_ID = QWEN3_MODEL_ID
+APP_VERSION = "1.8.0"
+MODEL_ID = OLLAMA_MODEL
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
 SYSTEM_PROMPT = (
@@ -56,29 +56,22 @@ def app_data_dir() -> Path:
     return target
 
 
-def configure_environment() -> tuple[Path, Path, Path]:
-    runtime_dir = resource_path("runtime")
-    model_path = app_data_dir() / "models" / QWEN3_MODEL_FILENAME
+def configure_environment() -> Path:
     data_dir = app_data_dir() / "Data"
     data_dir.mkdir(parents=True, exist_ok=True)
-
     os.environ["NEXA_PROVIDER"] = "local"
-    os.environ["NEXA_LOCAL_BASE_URL"] = f"http://127.0.0.1:{LOCAL_MODEL_PORT}/v1"
+    os.environ["NEXA_LOCAL_BASE_URL"] = "http://127.0.0.1:11434"
     os.environ["NEXA_LOCAL_API_KEY"] = ""
     os.environ.pop("NEXA_MM_PROJ_PATH", None)
-    os.environ["NEXA_MODEL"] = MODEL_ID
+    os.environ["NEXA_MODEL"] = OLLAMA_MODEL
     os.environ["NEXA_HOST"] = "127.0.0.1"
     os.environ["NEXA_PORT"] = str(API_PORT)
     os.environ["NEXA_BASE_URL"] = f"http://127.0.0.1:{API_PORT}/v1"
     os.environ["NEXA_DATA_DIR"] = str(data_dir)
-    os.environ["NEXA_MAX_OUTPUT_TOKENS"] = "1536"
-    os.environ["NEXA_REQUEST_TIMEOUT"] = "900"
+    os.environ["NEXA_MAX_OUTPUT_TOKENS"] = "2048"
+    os.environ["NEXA_REQUEST_TIMEOUT"] = "600"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    os.environ["PATH"] = str(runtime_dir) + os.pathsep + os.environ.get("PATH", "")
-    return runtime_dir, model_path, data_dir
-
+    return data_dir
 
 class NexaDesktop:
     BG = "#171a17"
@@ -131,7 +124,7 @@ class NexaDesktop:
         except (tk.TclError, OSError):
             pass
 
-        self.runtime_dir, self.model_path, self.data_dir = configure_environment()
+        self.data_dir = configure_environment()
         self.app_root = app_data_dir()
         self.plugin_manager = PluginManager(self.app_root)
         self.history_store = HistoryStore(self.data_dir)
@@ -142,16 +135,15 @@ class NexaDesktop:
         self.response_profile = self._load_response_preference()
         self._voice_capture_rate = 16000
         self.recording_warnings = ""
+        self.pending_send_queue: list[str] = []
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
         self.current_model_key = QWEN3_MODEL_KEY
         self.current_model_id = MODEL_ID
         self.current_model_name = QWEN3_MODEL_NAME
-        self.active_model_path = self.model_path
-        self.active_mmproj_path: Path | None = None
+        self.ollama_runtime = OllamaRuntime()
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
-        self.llama_process: subprocess.Popen | None = None
         self.api_server = None
         self.api_thread: threading.Thread | None = None
         self.ready = False
@@ -202,7 +194,8 @@ class NexaDesktop:
         self._sidebar_button(sidebar, "＋   New chat", self.new_conversation, accent=True).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⌕   Search conversations", self.open_history).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⚙   n8n Workflow Studio", self.open_n8n_studio).pack(fill="x", padx=11, pady=(0, 4))
-        self._sidebar_button(sidebar, "▦   Plugin Manager", self.open_plugin_manager).pack(fill="x", padx=11, pady=(0, 14))
+        self._sidebar_button(sidebar, "▦   Plugin Manager", self.open_plugin_manager).pack(fill="x", padx=11, pady=(0, 4))
+        self._sidebar_button(sidebar, "⬇   Install / update Ollama", self.open_ollama_download).pack(fill="x", padx=11, pady=(0, 14))
 
         tk.Label(sidebar, text="RECENT", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=18, pady=(2, 8))
         self.recent_chats_frame = tk.Frame(sidebar, bg=self.PANEL)
@@ -214,8 +207,8 @@ class NexaDesktop:
         tk.Frame(bottom, bg=self.BORDER, height=1).pack(fill="x", pady=(0, 12))
         model_card = tk.Frame(bottom, bg=self.PANEL_2, padx=10, pady=9)
         model_card.pack(fill="x")
-        tk.Label(model_card, text="●  Qwen3 4B", bg=self.PANEL_2, fg="#80cfa0", font=("Segoe UI Semibold", 9)).pack(anchor="w")
-        tk.Label(model_card, text="Local assistant · NTech", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
+        tk.Label(model_card, text="●  Gemma 3 1B", bg=self.PANEL_2, fg="#80cfa0", font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        tk.Label(model_card, text="Ollama local engine · NTech", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
         tk.Label(bottom, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(9, 0))
 
         main = tk.Frame(shell, bg=self.BG)
@@ -224,7 +217,7 @@ class NexaDesktop:
         top.pack(fill="x")
         top.pack_propagate(False)
         tk.Label(top, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 13)).pack(side="left", padx=(24, 10))
-        tk.Label(top, text="Qwen3 4B", bg=self.PANEL_2, fg=self.TEXT, font=("Segoe UI", 8), padx=9, pady=5).pack(side="left")
+        tk.Label(top, text="Gemma 3 1B", bg=self.PANEL_2, fg=self.TEXT, font=("Segoe UI", 8), padx=9, pady=5).pack(side="left")
         self.status_var = tk.StringVar(value="Starting local engine…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
         self.status_label.pack(side="right", padx=(8, 17))
@@ -495,6 +488,13 @@ class NexaDesktop:
         except OSError:
             pass
 
+    def open_ollama_download(self) -> None:
+        try:
+            webbrowser.open("https://ollama.com/download/windows")
+            self.status_var.set("Install Ollama, then restart NexaAI")
+        except Exception as exc:
+            messagebox.showerror("Ollama setup", f"Open https://ollama.com/download/windows and install Ollama.\\n\\n{exc}")
+
     def open_plugin_manager(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Nexa AI · Plugin Manager")
@@ -715,178 +715,35 @@ class NexaDesktop:
 
     def _boot_engine(self) -> None:
         try:
-            exe = self.runtime_dir / "llama-server.exe"
-            if not exe.is_file():
-                raise FileNotFoundError(f"Built-in inference runtime is missing: {exe}")
-            if not model_is_installed(QWEN3_MODEL_KEY, self.app_root, self.model_path):
-                self.events.put(("model_download_status", "First setup: downloading Qwen3 4B Q4_K_M · about 2.5 GB · internet required"))
-            else:
-                self.events.put(("model_download_status", "Verifying installed Qwen3 model integrity…"))
-            last_progress = 0.0
+            self.events.put(("model_download_status", "Checking local Ollama engine…"))
+            self.ollama_runtime.ensure_server(self.log_handle)
+            self.log_handle.write("Ollama local API is ready.\n")
 
-            def report_progress(_label: str, done: int, total: int) -> None:
-                nonlocal last_progress
-                now = time.monotonic()
-                elapsed = max(now - last_progress, 0.001)
-                previous_bytes = getattr(report_progress, "_last_bytes", 0)
-                speed = max(0.0, (done - previous_bytes) / elapsed)
-                if now - last_progress >= 0.4 or (total and done >= total):
-                    report_progress._last_bytes = done
-                    last_progress = now
-                    self.events.put(("model_download_progress", (done, total, speed)))
+            def report_progress(status: str, completed: int, total: int, speed: float) -> None:
+                self.events.put(("model_download_status", status))
+                if total:
+                    self.events.put(("model_download_progress", (completed, total, speed)))
 
-            # download_model verifies the full SHA-256 even when a GGUF is already present.
-            # A damaged local file is discarded and safely downloaded again.
-            self.active_model_path, _ = download_model(
-                QWEN3_MODEL_KEY, self.app_root, self.model_path, report_progress
-            )
-            if not self.active_model_path.is_file():
-                raise FileNotFoundError(f"Qwen3 4B model file is missing: {self.active_model_path}")
-            self.log_handle.write("Qwen3 GGUF header and SHA-256 verification passed.\n")
-            if self._port_is_occupied(LOCAL_MODEL_PORT):
-                raise RuntimeError(
-                    f"Local AI port {LOCAL_MODEL_PORT} is already in use. "
-                    "Close another NexaAI window or local llama-server, then restart."
-                )
-            runtime_probe = subprocess.run(
-                [str(exe), "--version"], cwd=str(self.runtime_dir),
-                capture_output=True, text=True, timeout=20,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if runtime_probe.returncode != 0:
-                raise RuntimeError(
-                    "The bundled llama.cpp executable or one of its DLL dependencies failed to load. "
-                    f"Exit code: {runtime_probe.returncode}. "
-                    f"{(runtime_probe.stderr or runtime_probe.stdout).strip()[:1000]}"
-                )
-            self.log_handle.write(f"llama.cpp runtime: {(runtime_probe.stdout or runtime_probe.stderr).strip()}\n")
-            available_ram = self._available_memory_gb()
-            if available_ram is not None:
-                self.log_handle.write(f"Available physical RAM before model load: {available_ram:.2f} GB\n")
-                if available_ram < 3.5:
-                    self.log_handle.write("WARNING: available RAM is low; Qwen3 4B may still exceed memory limits.\n")
-
-            profiles = engine_profiles(os.cpu_count())
-            if available_ram is not None and available_ram < 4.0:
-                profiles = profiles[1:]
-            if available_ram is not None and available_ram < 2.6:
-                profiles = profiles[1:]
-            server_ready = False
-            failures: list[str] = []
-            for attempt, profile in enumerate(profiles, start=1):
-                cmd = build_engine_command(exe, self.active_model_path, LOCAL_MODEL_PORT, self.current_model_id, profile)
-                self.log_handle.write(
-                    f"\n=== llama-server attempt {attempt}: {profile['name']} "
-                    f"(ctx={profile['context']}, batch={profile['batch']}, ubatch={profile['ubatch']}, threads={profile['threads']}) ===\n"
-                )
-                self.log_handle.write("Command: " + subprocess.list2cmdline(cmd) + "\n")
-                self.log_handle.flush()
-                self.llama_process = subprocess.Popen(
-                    cmd, cwd=str(self.runtime_dir), stdin=subprocess.DEVNULL,
-                    stdout=self.log_handle, stderr=subprocess.STDOUT,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                if self._wait_for_model_server(420):
-                    server_ready = True
-                    self.log_handle.write(f"llama-server ready using {profile['name']} profile.\n")
-                    break
-                return_code = self.llama_process.poll() if self.llama_process else None
-                failures.append(f"{profile['name']} profile: process exit code {return_code}")
-                self.log_handle.write(f"{failures[-1]}\n")
-                self.log_handle.flush()
-                self._stop_llama_process()
-                time.sleep(2)
-
-            if not server_ready:
-                log_tail = self._read_runtime_log_tail(35)
-                ram_text = f"Available RAM before startup: {available_ram:.2f} GB" if available_ram is not None else "Available RAM: unavailable"
-                raise RuntimeError(
-                    "The local Qwen3 engine could not start after CPU/memory fallback profiles.\n"
-                    + ram_text + "\n"
-                    + "\n".join(failures)
-                    + "\n\nRecent llama.cpp diagnostics:\n"
-                    + (log_tail or "No llama.cpp output was recorded.")
-                    + f"\n\nFull log: {self.log_path}"
-                )
+            if OLLAMA_MODEL not in self.ollama_runtime.installed_models():
+                self.events.put(("model_download_status", f"First setup: downloading Gemma 3 1B · {OLLAMA_MODEL_SIZE}"))
+            self.ollama_runtime.ensure_model(report_progress)
+            self.log_handle.write(f"Local model ready: {OLLAMA_MODEL}\n")
 
             if self.api_server is None:
                 from nexa_ai.config import settings
                 import uvicorn
                 from nexa_ai.api import app
-
                 config = build_uvicorn_config(app, host=settings.host, port=settings.port)
                 self.api_server = uvicorn.Server(config)
                 self.api_thread = threading.Thread(target=self.api_server.run, daemon=True, name="NexaLocalAPI")
                 self.api_thread.start()
                 if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
-                    raise RuntimeError("Nexa AI local API could not start. Port 8000 may already be in use.")
+                    raise RuntimeError("NexaAI local API could not start. Port 8000 may already be in use.")
             self.events.put(("ready", None))
+        except OllamaNotInstalled as exc:
+            self.events.put(("ollama_missing", str(exc)))
         except Exception as exc:
             self.events.put(("boot_error", str(exc)))
-
-    @staticmethod
-    def _port_is_occupied(port: int) -> bool:
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.settimeout(0.4)
-            return probe.connect_ex(("127.0.0.1", port)) == 0
-
-    @staticmethod
-    def _available_memory_gb() -> float | None:
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-        try:
-            status = MEMORYSTATUSEX()
-            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-                return status.ullAvailPhys / (1024 ** 3)
-        except (AttributeError, OSError):
-            pass
-        return None
-
-    def _read_runtime_log_tail(self, line_count: int = 30) -> str:
-        try:
-            self.log_handle.flush()
-            lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            return "\n".join(lines[-line_count:])
-        except OSError:
-            return ""
-
-    def _stop_llama_process(self) -> None:
-        process = self.llama_process
-        if not process or process.poll() is not None:
-            return
-        process.terminate()
-        try:
-            process.wait(timeout=8)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-
-    def _wait_for_model_server(self, timeout_seconds: int) -> bool:
-        deadline = time.monotonic() + timeout_seconds
-        health_url = f"http://127.0.0.1:{LOCAL_MODEL_PORT}/health"
-        while time.monotonic() < deadline:
-            if self.llama_process and self.llama_process.poll() is not None:
-                return False
-            try:
-                with httpx.Client(timeout=2) as client:
-                    response = client.get(health_url)
-                    if response.is_success:
-                        return True
-            except Exception:
-                pass
-            time.sleep(0.5)
-        return False
 
     @staticmethod
     def _wait_for_url(url: str, timeout_seconds: int) -> bool:
@@ -935,10 +792,21 @@ class NexaDesktop:
                         percent = done * 100 / total
                         remaining = max(0, total - done)
                         eta = f" · ETA {remaining / speed:.0f}s" if speed > 0 else ""
-                        self.status_var.set(f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
+                        self.status_var.set(f"Downloading Gemma 3 1B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
                     else:
-                        self.status_var.set(f"Downloading Qwen3 4B · {done / (1024 ** 2):.0f} MB · {rate}")
+                        self.status_var.set(f"Downloading Gemma 3 1B · {done / (1024 ** 2):.0f} MB · {rate}")
                     self.status_label.configure(fg=self.ACCENT)
+                elif kind == "ollama_missing":
+                    self.status_var.set("Ollama installation required")
+                    self.status_label.configure(fg="#ffb86b")
+                    install = messagebox.askyesno(
+                        "Ollama is required",
+                        "NexaAI now uses Ollama with Gemma 3 1B for faster local chat.\\n\\n"
+                        "Install Ollama from the official Windows page now? After installation, restart NexaAI.\\n\\n"
+                        + str(payload),
+                    )
+                    if install:
+                        self.open_ollama_download()
                 elif kind == "boot_error":
                     self.status_var.set("Offline engine failed to start")
                     self.status_label.configure(fg="#ff8d8d")
@@ -1074,7 +942,7 @@ class NexaDesktop:
         try:
             payload = {
                 "model": self.current_model_id,
-                "messages": build_chat_context(self.messages, max_recent_messages=8),
+                "messages": build_chat_context(self.messages, max_recent_messages=12),
                 "stream": True,
                 "temperature": 0.55,
                 "max_tokens": int(max_tokens),
@@ -1108,9 +976,14 @@ class NexaDesktop:
                             if isinstance(piece, list):
                                 piece = "".join(str(p.get("text", "")) for p in piece if isinstance(p, dict))
                             if piece:
+                                if not answer:
+                                    self.events.put(("first_token", None))
                                 answer.append(str(piece))
                                 self.events.put(("stream", str(piece)))
-            self.messages.append({"role": "assistant", "content": "".join(answer)})
+            final_answer = "".join(answer).strip()
+            if not final_answer:
+                raise RuntimeError("Gemma 3 1B returned no visible answer. Check the Ollama model status and try again.")
+            self.messages.append({"role": "assistant", "content": final_answer})
             self._save_chat()
             self.events.put(("done", None))
         except Exception as exc:
