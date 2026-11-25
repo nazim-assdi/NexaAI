@@ -115,7 +115,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(response_token_limit("Quick"), 384)
         self.assertEqual(response_token_limit("Balanced"), 768)
         self.assertEqual(response_token_limit("Detailed"), 1280)
-        self.assertEqual(response_token_limit("unknown"), 1280)
+        self.assertEqual(response_token_limit("unknown"), 768)
 
     def test_chat_context_keeps_system_and_recent_turns_only(self):
         messages = [{"role": "system", "content": "rules"}]
