@@ -7,9 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
-from nexa_ai.local_backend import _parse_content, prepare_messages
-from nexa_ai.model_library import MODEL_CATALOG, _parse_content_range, model_is_installed, verify_model_file
-from nexa_ai.engine_config import build_engine_command, engine_profiles
+from nexa_ai.local_backend import _parse_content, prepare_messages, _options, parse_ollama_stream_chunk
+from nexa_ai.ollama_runtime import OLLAMA_MODEL, OLLAMA_MODEL_SIZE, OllamaNotInstalled, OllamaRuntime
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
@@ -17,9 +16,8 @@ from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_js
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
-from nexa_ai.chat_layout import build_chat_context, response_token_limit
+from nexa_ai.chat_layout import build_chat_context, response_token_limit, enqueue_followup, take_followup
 from nexa_ai.voice_utils import resample_mono_int16
-from tools.smoke_test_runtime import build_smoke_payload
 
 
 class CoreTests(unittest.TestCase):
@@ -40,44 +38,52 @@ class CoreTests(unittest.TestCase):
         messages = [{"role": "user", "content": "hello"}]
         self.assertEqual(prepare_messages(messages), messages)
 
-    def test_model_catalog_contains_only_qwen3_4b(self):
-        self.assertEqual(set(MODEL_CATALOG), {"qwen3-4b"})
-        self.assertEqual(MODEL_CATALOG["qwen3-4b"]["id"], "nexa-qwen3-4b")
-        self.assertEqual(MODEL_CATALOG["qwen3-4b"]["filename"], "Qwen3-4B-Q4_K_M.gguf")
+    def test_ollama_runtime_uses_gemma_3_1b(self):
+        self.assertEqual(OLLAMA_MODEL, "gemma3:1b")
+        self.assertIn("806", OLLAMA_MODEL_SIZE)
 
-    def test_model_installed_requires_gguf_magic(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            path = root / "models" / "Qwen3-4B-Q4_K_M.gguf"
-            path.parent.mkdir(parents=True)
-            with patch.dict(MODEL_CATALOG["qwen3-4b"], {"minimum_bytes": 4}):
-                path.write_bytes(b"BAD!")
-                self.assertFalse(model_is_installed("qwen3-4b", root))
-                path.write_bytes(b"GGUF")
-                self.assertTrue(model_is_installed("qwen3-4b", root))
+    def test_ollama_runtime_explains_missing_installation(self):
+        runtime = OllamaRuntime()
+        with patch.object(runtime, "server_ready", return_value=False):
+            with patch.object(OllamaRuntime, "find_executable", return_value=None):
+                with self.assertRaisesRegex(OllamaNotInstalled, "ollama.com/download/windows"):
+                    runtime.ensure_server()
 
-    def test_verify_model_file_rejects_bad_header_and_wrong_hash(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "bad.gguf"
-            with patch.dict(MODEL_CATALOG["qwen3-4b"], {"minimum_bytes": 4}):
-                path.write_bytes(b"BAD!")
-                with self.assertRaisesRegex(RuntimeError, "GGUF header"):
-                    verify_model_file("qwen3-4b", path)
-                path.write_bytes(b"GGUF")
-                with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
-                    verify_model_file("qwen3-4b", path)
+    def test_ollama_runtime_does_not_pull_an_already_installed_model(self):
+        runtime = OllamaRuntime()
+        with patch.object(runtime, "installed_models", return_value=["gemma3:1b"]):
+            runtime.ensure_model()
+        self.assertFalse(runtime.started_by_nexa)
 
-    def test_model_downloader_parses_content_range(self):
-        self.assertEqual(_parse_content_range("bytes 0-0/2500000000"), (0, 0, 2500000000))
-        self.assertIsNone(_parse_content_range("bytes */2500000000"))
-        self.assertIsNone(_parse_content_range("bad-range"))
+    def test_ollama_options_are_cpu_friendly(self):
+        options = _options(0.2, 384)
+        self.assertEqual(options["num_predict"], 384)
+        self.assertEqual(options["num_ctx"], 4096)
+        self.assertGreaterEqual(options["num_thread"], 1)
+        self.assertLessEqual(options["num_thread"], 4)
 
-    def test_qwen3_smoke_test_disables_reasoning_budget_for_health_check(self):
-        payload = build_smoke_payload()
-        self.assertEqual(payload["model"], "nexa-qwen3-4b")
-        self.assertEqual(payload["reasoning_effort"], "none")
-        self.assertGreaterEqual(payload["max_tokens"], 32)
+    def test_ollama_stream_parser_returns_visible_text_and_done(self):
+        self.assertEqual(parse_ollama_stream_chunk('{"message":{"content":"hello"},"done":false}'), ("hello", False))
+        self.assertEqual(parse_ollama_stream_chunk('{"message":{"content":""},"done":true}'), ("", True))
+        self.assertEqual(parse_ollama_stream_chunk("partial"), ("", False))
 
+    def test_ollama_stream_parser_surfaces_server_errors(self):
+        with self.assertRaisesRegex(RuntimeError, "model not found"):
+            parse_ollama_stream_chunk('{"error":"model not found"}')
+
+    def test_followup_queue_preserves_order_and_enforces_limit(self):
+        queue = []
+        self.assertTrue(enqueue_followup(queue, " second "))
+        self.assertTrue(enqueue_followup(queue, "third", limit=2))
+        self.assertFalse(enqueue_followup(queue, "fourth", limit=2))
+        self.assertEqual(take_followup(queue), "second")
+        self.assertEqual(take_followup(queue), "third")
+        self.assertIsNone(take_followup(queue))
+
+    def test_followup_queue_rejects_blank_messages(self):
+        queue = []
+        self.assertFalse(enqueue_followup(queue, "   "))
+        self.assertEqual(queue, [])
     def test_uvicorn_config_disables_packaged_default_logging_formatter(self):
         config = build_uvicorn_config(object(), host="127.0.0.1", port=8000)
         self.assertIsNone(config.log_config)
@@ -106,9 +112,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(recent_chat_label("   "), "New conversation")
 
     def test_response_profiles_offer_speed_and_detail_choices(self):
-        self.assertEqual(response_token_limit("Quick"), 768)
-        self.assertEqual(response_token_limit("Balanced"), 1280)
-        self.assertEqual(response_token_limit("Detailed"), 2048)
+        self.assertEqual(response_token_limit("Quick"), 384)
+        self.assertEqual(response_token_limit("Balanced"), 768)
+        self.assertEqual(response_token_limit("Detailed"), 1280)
         self.assertEqual(response_token_limit("unknown"), 1280)
 
     def test_chat_context_keeps_system_and_recent_turns_only(self):
@@ -136,35 +142,13 @@ class CoreTests(unittest.TestCase):
         import numpy as np
         with self.assertRaises(ValueError):
             resample_mono_int16(np.array([1, 2], dtype=np.int16), 0, 16000)
-    def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
-        profiles = engine_profiles(cpu_count=4)
-        self.assertEqual([item["context"] for item in profiles], [4096, 2048, 1024])
-        self.assertEqual(profiles[-1]["batch"], 32)
-        self.assertEqual(profiles[0]["threads"], 2)
-
-    def test_llama_command_disables_gpu_and_uses_cpu_threads(self):
-        command = build_engine_command("llama-server.exe", "qwen.gguf", 11435, "nexa-qwen3-4b", engine_profiles(4)[1])
-        self.assertEqual(command[command.index("--n-gpu-layers") + 1], "0")
-        self.assertIn("--batch-size", command)
-        self.assertIn("--offline", command)
-        self.assertEqual(command[command.index("--device") + 1], "none")
-        self.assertEqual(command[command.index("--fit") + 1], "off")
-        self.assertIn("--load-mode", command)
-        self.assertNotIn("--jinja", command)
-
-    def test_qwen3_is_recommended_and_checksum_pinned(self):
-        qwen = MODEL_CATALOG["qwen3-4b"]
-        self.assertTrue(qwen["recommended"])
-        self.assertEqual(qwen["sha256"], "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5")
-        self.assertIn("Q4_K_M", qwen["filename"])
-
     def test_image_attachment_requires_vision_model(self):
         with tempfile.TemporaryDirectory() as folder:
             image_path = Path(folder) / "sample.png"
             image_path.write_bytes(b"image-bytes")
             stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
-            with patch.dict(os.environ, {"NEXA_MM_PROJ_PATH": ""}), patch("nexa_ai.local_backend.file_store.get", return_value=stored):
-                with self.assertRaisesRegex(RuntimeError, "Qwen3 4B"):
+            with patch("nexa_ai.local_backend.file_store.get", return_value=stored):
+                with self.assertRaisesRegex(RuntimeError, "Gemma 3 1B"):
                     prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
 
     def test_plugin_toggle_persists(self):
@@ -205,7 +189,7 @@ class CoreTests(unittest.TestCase):
                 {"role": "user", "content": "Build an n8n workflow"},
                 {"role": "assistant", "content": "Here is the plan."},
             ]
-            store.save(conversation_id, "n8n workflow", messages, "nexa-qwen3-4b")
+            store.save(conversation_id, "n8n workflow", messages, "gemma3:1b")
             items = store.list_conversations()
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0]["title"], "n8n workflow")

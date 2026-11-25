@@ -25,7 +25,7 @@ from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
-from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit, enqueue_followup, take_followup
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
@@ -926,10 +926,9 @@ class NexaDesktop:
             if self.pending_files:
                 self.status_var.set("Wait until the current answer finishes before attaching another file.")
                 return
-            if len(self.pending_send_queue) >= 4:
+            if not enqueue_followup(self.pending_send_queue, text, limit=4):
                 self.status_var.set("Message queue is full · maximum 4 follow-ups")
                 return
-            self.pending_send_queue.append(text)
             self.input.delete("1.0", "end")
             self.input_placeholder_active = False
             self.input.configure(fg=self.TEXT)
@@ -965,7 +964,9 @@ class NexaDesktop:
     def _send_next_queued(self) -> None:
         if not self.ready or self.busy or not self.pending_send_queue:
             return
-        next_text = self.pending_send_queue.pop(0)
+        next_text = take_followup(self.pending_send_queue)
+        if next_text is None:
+            return
         self.input.delete("1.0", "end")
         self.input.insert("1.0", next_text)
         self.input_placeholder_active = False
@@ -1149,6 +1150,8 @@ class NexaDesktop:
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._show_empty_state()
         self.pending_files.clear()
+        self.pending_send_queue.clear()
+        self.send_button.configure(text="↑", state="normal" if self.ready else "disabled")
         self._refresh_attachments()
         self.show_chat_workspace()
 

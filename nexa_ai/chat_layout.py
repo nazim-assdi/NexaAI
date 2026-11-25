@@ -17,7 +17,7 @@ def recent_chat_label(title: str, max_length: int = 30) -> str:
         return text
     return text[: max(1, max_length - 1)].rstrip() + "…"
 
-RESPONSE_PROFILES = {"Quick": 768, "Balanced": 1280, "Detailed": 2048}
+RESPONSE_PROFILES = {"Quick": 384, "Balanced": 768, "Detailed": 1280}
 
 def response_token_limit(profile: str) -> int:
     return RESPONSE_PROFILES.get(str(profile), RESPONSE_PROFILES["Balanced"])
@@ -27,3 +27,13 @@ def build_chat_context(messages: list[dict], max_recent_messages: int = 8) -> li
     system = [item for item in messages if item.get("role") == "system"][:1]
     history = [item for item in messages if item.get("role") != "system"]
     return system + history[-max(2, int(max_recent_messages)):]
+
+def enqueue_followup(queue: list[str], text: str, limit: int = 4) -> bool:
+    value = str(text).strip()
+    if not value or len(queue) >= max(0, int(limit)):
+        return False
+    queue.append(value)
+    return True
+
+def take_followup(queue: list[str]) -> str | None:
+    return queue.pop(0) if queue else None

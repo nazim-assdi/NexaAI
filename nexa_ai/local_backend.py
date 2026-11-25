@@ -19,6 +19,13 @@ class LocalModelUnavailable(RuntimeError):
     pass
 
 
+def _parse_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(str(item.get("text", "")) for item in value if isinstance(item, dict))
+    return ""
+
 def _error_text(response: httpx.Response) -> str:
     try:
         payload = response.json()
@@ -151,6 +158,18 @@ def generate_text(
         raise RuntimeError(f"Unexpected Ollama response: {json.dumps(data)[:800]}") from exc
 
 
+def parse_ollama_stream_chunk(raw: str) -> tuple[str, bool]:
+    """Parse one Ollama JSONL chunk into display text and completion state."""
+    try:
+        item = json.loads(raw)
+    except json.JSONDecodeError:
+        return "", False
+    if item.get("error"):
+        raise RuntimeError(str(item["error"]))
+    message = item.get("message") or {}
+    content = message.get("content", "")
+    return (content if isinstance(content, str) else ""), bool(item.get("done"))
+
 def stream_text(
     messages: list[dict[str, Any]],
     model: str | None = None,
@@ -171,15 +190,8 @@ def stream_text(
             for line in response.iter_lines():
                 if not line:
                     continue
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if item.get("error"):
-                    raise RuntimeError(str(item["error"]))
-                message = item.get("message") or {}
-                text = message.get("content", "")
-                if isinstance(text, str) and text:
+                text, done = parse_ollama_stream_chunk(line)
+                if text:
                     yield text
-                if item.get("done"):
+                if done:
                     break
