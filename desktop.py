@@ -23,6 +23,7 @@ from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
+from nexa_ai.server_config import build_uvicorn_config
 
 APP_NAME = "Nexa AI"
 APP_VERSION = "1.5.0"
@@ -562,7 +563,7 @@ class NexaDesktop:
                 import uvicorn
                 from nexa_ai.api import app
 
-                config = uvicorn.Config(app, host=settings.host, port=settings.port, log_level="error", access_log=False)
+                config = build_uvicorn_config(app, host=settings.host, port=settings.port)
                 self.api_server = uvicorn.Server(config)
                 self.api_thread = threading.Thread(target=self.api_server.run, daemon=True, name="NexaLocalAPI")
                 self.api_thread.start()

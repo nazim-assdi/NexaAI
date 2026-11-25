@@ -14,6 +14,7 @@ from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
+from nexa_ai.server_config import build_uvicorn_config
 from tools.smoke_test_runtime import build_smoke_payload
 
 
@@ -72,6 +73,13 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(payload["model"], "nexa-qwen3-4b")
         self.assertEqual(payload["reasoning_effort"], "none")
         self.assertGreaterEqual(payload["max_tokens"], 32)
+
+    def test_uvicorn_config_disables_packaged_default_logging_formatter(self):
+        config = build_uvicorn_config(object(), host="127.0.0.1", port=8000)
+        self.assertIsNone(config.log_config)
+        self.assertFalse(config.access_log)
+        self.assertEqual(config.host, "127.0.0.1")
+        self.assertEqual(config.port, 8000)
 
     def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
         profiles = engine_profiles(cpu_count=4)
