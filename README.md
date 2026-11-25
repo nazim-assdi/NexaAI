@@ -1,11 +1,11 @@
-# Nexa AI 1.5.2 — NTech Edition · Verified Qwen3 Offline Assistant
+# Nexa AI 1.6.0 — NTech Edition · Verified Qwen3 Offline Assistant
 
 Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.5.2-Windows-x64.exe\`.
+2. Download \`NexaAI-Setup-1.6.0-Windows-x64.exe\`.
 3. Install and launch Nexa AI.
 4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
 
@@ -27,15 +27,7 @@ The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K 
 
 ## Chat and coding
 
-The main screen opens directly into **Chat Workspace**. The window automatically adapts to the current display so the message box and Send Message button stay visible on common laptop/desktop resolutions. Click the bottom composer, type a message and press **Enter** to send; use **Shift+Enter** for a new line. A dedicated Chat Workspace item is also available in the left sidebar.
-
-
-
-- Bengali and English conversation.
-- Python, JavaScript, HTML/CSS, Windows troubleshooting and coding assistance.
-- Explain, review and debug code; generate complete files and project structures.
-- Local text and source-code file attachments.
-- All model inference happens on the local computer after setup.
+NexaAI 1.6.0 uses a modern assistant-style workspace: a compact left navigation rail with **New chat**, conversation search, n8n tools, plugins and recent chats; a central scrollable conversation timeline; a centered welcome screen with prompt suggestions; and a rounded-style message composer with attachment, voice and send controls. User messages are shown in right-aligned cards while assistant replies stream in the timeline. **NTech Chat Dark** is the default theme for new installations; the existing Eye Comfort and OLED themes remain available.
 
 ## Chat History
 

@@ -71,50 +71,12 @@ jobs:
           python -m compileall -q nexa_ai desktop.py tools/build_icon.py tools/smoke_test_runtime.py
           python -m unittest discover -s tests -v
 
-      - name: Decide whether the full Qwen3 runtime smoke test is required
-        id: qwen_smoke
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $runSmoke = $env:GITHUB_EVENT_NAME -eq "workflow_dispatch"
-          $changed = @(git diff --name-only HEAD^ HEAD)
-          $critical = @(
-            "nexa_ai/engine_config.py",
-            "nexa_ai/model_library.py",
-            "nexa_ai/local_backend.py",
-            "nexa_ai/server_config.py",
-            "tools/smoke_test_runtime.py",
-            "requirements.txt"
-          )
-          foreach ($path in $critical) {
-            if ($changed -contains $path) { $runSmoke = $true }
-          }
-          if ($changed -contains "desktop.py") {
-            $desktopDiff = (git diff --unified=0 HEAD^ HEAD -- desktop.py) -join "`n"
-            if ($desktopDiff -match "(?m)^\+.*(_boot_engine|_wait_for_model_server|build_engine_command|download_model|QWEN3_MODEL)") {
-              $runSmoke = $true
-            }
-          }
-          if ($changed -contains ".github/workflows/build-windows-installer.yml") {
-            $workflowDiff = (git diff --unified=0 HEAD^ HEAD -- .github/workflows/build-windows-installer.yml) -join "`n"
-            if ($workflowDiff -match "LLAMA_CPP_TAG|LLAMA_RUNTIME_URL|LLAMA_RUNTIME_SHA256|smoke_test_runtime.py") {
-              $runSmoke = $true
-            }
-          }
-          "required=$($runSmoke.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          Write-Host "Full Qwen3 runtime smoke test required: $runSmoke"
-
       - name: End-to-end smoke test with the actual Qwen3 4B model on Windows
-        if: ${{ steps.qwen_smoke.outputs.required == 'true' }}
         shell: pwsh
         timeout-minutes: 35
         run: |
           $ErrorActionPreference = "Stop"
           python tools/smoke_test_runtime.py --runtime "runtime\llama-server.exe" --model "$env:RUNNER_TEMP\Qwen3-4B-Q4_K_M.gguf" --log-dir "$env:RUNNER_TEMP\nexa-qwen3-smoke"
-
-      - name: Skip full Qwen3 smoke test for UI-only changes
-        if: ${{ steps.qwen_smoke.outputs.required != 'true' }}
-        run: echo "Skipped: this commit changes UI/packaging only. The current Qwen3 runtime was validated by the latest full-model Windows smoke test."
 
       - name: Build self-contained desktop application
         shell: pwsh
@@ -199,12 +161,12 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v1.5.2
-          name: Nexa AI Desktop v1.5.2 — Verified Qwen3 Runtime
+          tag_name: desktop-v1.6.0
+          name: Nexa AI Desktop v1.6.0 — Verified Qwen3 Runtime
           body: |
             Installable Windows x64 build of Nexa AI. Qwen3 4B Instruct Q4_K_M is the one and only chat/coding/reasoning model. The installer contains the Windows CPU runtime; the app downloads the official approximately 2.5 GB Qwen3 GGUF on first launch and verifies its SHA-256. After this one-time download, the model runs locally without internet, Ollama, Python, command-line setup or an API key.
 
-            Voice input uses a separate Whisper speech-recognition component (not another chat model); Windows SAPI provides local speech output. Qwen3 4B is text-only, so this single-model edition supports text/code and selectable-text PDFs, not image/video understanding or scanned-PDF OCR.
+            The UI now has a ChatGPT-inspired recent-chat sidebar, welcome suggestions, streamed user/assistant message rows and a centered composer. Voice input uses a separate Whisper speech-recognition component (not another chat model); Windows SAPI provides local speech output. Qwen3 4B is text-only, so this single-model edition supports text/code and selectable-text PDFs, not image/video understanding or scanned-PDF OCR.
           files: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt

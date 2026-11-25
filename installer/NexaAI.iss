@@ -1,14 +1,14 @@
 [Setup]
 AppId={{D32E4A64-9A42-4E8D-AC79-1AFD64FB1A10}
 AppName=Nexa AI
-AppVersion=1.5.2
+AppVersion=1.6.0
 AppPublisher=NTech
 DefaultDirName={localappdata}\Programs\NexaAI
 DefaultGroupName=Nexa AI
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\output
-OutputBaseFilename=NexaAI-Setup-1.5.2-Windows-x64
+OutputBaseFilename=NexaAI-Setup-1.6.0-Windows-x64
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
@@ -20,7 +20,7 @@ CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
 DiskSpanning=no
-VersionInfoVersion=1.5.2.0
+VersionInfoVersion=1.6.0.0
 VersionInfoProductName=Nexa AI
 VersionInfoDescription=Single-model offline Qwen3 4B AI, voice and n8n desktop assistant
 
