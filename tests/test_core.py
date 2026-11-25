@@ -17,6 +17,8 @@ from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_js
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
+from nexa_ai.chat_layout import build_chat_context, response_token_limit
+from nexa_ai.voice_utils import resample_mono_int16
 from tools.smoke_test_runtime import build_smoke_payload
 
 
@@ -103,6 +105,37 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(recent_chat_label("A" * 80)), 30)
         self.assertEqual(recent_chat_label("   "), "New conversation")
 
+    def test_response_profiles_offer_speed_and_detail_choices(self):
+        self.assertEqual(response_token_limit("Quick"), 768)
+        self.assertEqual(response_token_limit("Balanced"), 1280)
+        self.assertEqual(response_token_limit("Detailed"), 2048)
+        self.assertEqual(response_token_limit("unknown"), 1280)
+
+    def test_chat_context_keeps_system_and_recent_turns_only(self):
+        messages = [{"role": "system", "content": "rules"}]
+        messages.extend({"role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(14))
+        context = build_chat_context(messages, max_recent_messages=8)
+        self.assertEqual(context[0]["role"], "system")
+        self.assertEqual(len(context), 9)
+        self.assertEqual(context[-1]["content"], "13")
+        self.assertEqual(context[1]["content"], "6")
+
+    def test_voice_audio_resampler_converts_native_mic_rate_to_16khz(self):
+        import numpy as np
+        result = resample_mono_int16(np.arange(48000, dtype=np.int16), 48000, 16000)
+        self.assertEqual(result.dtype, np.int16)
+        self.assertEqual(len(result), 16000)
+
+    def test_voice_audio_resampler_keeps_native_16khz_samples(self):
+        import numpy as np
+        source = np.array([0, 100, -100, 500], dtype=np.int16)
+        result = resample_mono_int16(source, 16000, 16000)
+        self.assertTrue(np.array_equal(result, source))
+
+    def test_voice_audio_resampler_rejects_invalid_source_rate(self):
+        import numpy as np
+        with self.assertRaises(ValueError):
+            resample_mono_int16(np.array([1, 2], dtype=np.int16), 0, 16000)
     def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
         profiles = engine_profiles(cpu_count=4)
         self.assertEqual([item["context"] for item in profiles], [4096, 2048, 1024])

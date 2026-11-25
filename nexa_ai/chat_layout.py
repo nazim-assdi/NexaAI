@@ -16,3 +16,14 @@ def recent_chat_label(title: str, max_length: int = 30) -> str:
     if len(text) <= max_length:
         return text
     return text[: max(1, max_length - 1)].rstrip() + "…"
+
+RESPONSE_PROFILES = {"Quick": 768, "Balanced": 1280, "Detailed": 2048}
+
+def response_token_limit(profile: str) -> int:
+    return RESPONSE_PROFILES.get(str(profile), RESPONSE_PROFILES["Balanced"])
+
+def build_chat_context(messages: list[dict], max_recent_messages: int = 8) -> list[dict]:
+    """Keep the system prompt and a bounded recent window for faster CPU prompt processing."""
+    system = [item for item in messages if item.get("role") == "system"][:1]
+    history = [item for item in messages if item.get("role") != "system"]
+    return system + history[-max(2, int(max_recent_messages)):]
