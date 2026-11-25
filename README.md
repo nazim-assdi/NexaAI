@@ -1,11 +1,11 @@
-# Nexa AI 1.5.1 — NTech Edition · Verified Qwen3 Offline Assistant
+# Nexa AI 1.5.2 — NTech Edition · Verified Qwen3 Offline Assistant
 
 Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
 
 ## Install
 
 1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.5.1-Windows-x64.exe\`.
+2. Download \`NexaAI-Setup-1.5.2-Windows-x64.exe\`.
 3. Install and launch Nexa AI.
 4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
 
@@ -26,6 +26,10 @@ The app downloads and checks this exact file automatically at first start. It is
 The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It uses CPU-only inference, mmap loading and fewer threads on older processors. Each Windows release runs an end-to-end test with the exact Qwen3 GGUF, server health endpoint and local chat completion. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
 
 ## Chat and coding
+
+The main screen opens directly into **Chat Workspace**. The window automatically adapts to the current display so the message box and Send Message button stay visible on common laptop/desktop resolutions. Click the bottom composer, type a message and press **Enter** to send; use **Shift+Enter** for a new line. A dedicated Chat Workspace item is also available in the left sidebar.
+
+
 
 - Bengali and English conversation.
 - Python, JavaScript, HTML/CSS, Windows troubleshooting and coding assistance.

@@ -24,9 +24,10 @@ from nexa_ai.history_store import HistoryStore
 from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
+from nexa_ai.ui_layout import calculate_window_geometry
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -110,8 +111,8 @@ class NexaDesktop:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(f"{APP_NAME} {APP_VERSION}")
-        self.root.geometry("1120x760")
-        self.root.minsize(820, 620)
+        self.root.minsize(820, 560)
+        self.root.geometry(calculate_window_geometry(self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
         self.root.configure(bg=self.BG)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         try:
@@ -157,7 +158,7 @@ class NexaDesktop:
         self._build_ui()
         self._append_message(
             "Nexa AI",
-            "NexaAI uses one assistant model: Qwen3 4B Q4_K_M. On first launch it downloads the model (about 2.5 GB); after that, chat, coding and n8n work offline.",
+            "Welcome to NexaAI Chat Workspace. Your messages go to the local Qwen3 4B assistant. Click the message box at the bottom, type anything, then press Enter or Send Message. Ask for coding help, debugging, Bengali/English chat or n8n workflow design.",
             "assistant",
         )
         self.status_var.set("Preparing Qwen3 4B · checking local model…")
@@ -204,7 +205,11 @@ class NexaDesktop:
         tk.Label(labels, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.ACCENT, font=("Segoe UI Semibold", 7)).pack(anchor="w", pady=(3, 0))
 
         ttk.Button(
-            sidebar, text="＋   New conversation", style="Accent.TButton",
+            sidebar, text="💬   Chat Workspace", style="Accent.TButton",
+            command=self.show_chat_workspace,
+        ).pack(fill="x", padx=14, pady=(0, 8))
+        ttk.Button(
+            sidebar, text="＋   New conversation", style="Nexa.TButton",
             command=self.new_conversation,
         ).pack(fill="x", padx=14, pady=(0, 8))
         ttk.Button(
@@ -235,8 +240,8 @@ class NexaDesktop:
         top = tk.Frame(main, bg=self.PANEL, height=66)
         top.pack(fill="x")
         top.pack_propagate(False)
-        tk.Label(top, text="Assistant", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(side="left", padx=22)
-        tk.Label(top, text="NTECH", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=5).pack(side="left")
+        tk.Label(top, text="Chat Workspace", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(side="left", padx=22)
+        tk.Label(top, text="QWEN3 4B  ·  NTECH", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=5).pack(side="left")
         self.status_var = tk.StringVar(value="Starting…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9))
         self.status_label.pack(side="right", padx=(10, 22))
@@ -262,10 +267,11 @@ class NexaDesktop:
         self.chat.tag_configure("meta", foreground=self.MUTED, font=("Segoe UI", 8), lmargin1=12, spacing3=14)
 
         footer = tk.Frame(main, bg=self.BG)
-        footer.pack(fill="x", padx=20, pady=(8, 16))
+        footer.pack(fill="x", padx=20, pady=(8, 12))
+        tk.Label(footer, text="MESSAGE NEXA AI", bg=self.BG, fg=self.MUTED, font=("Segoe UI Semibold", 8), anchor="w").pack(fill="x", pady=(0, 5))
         self.attachments_label = tk.Label(footer, text="", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), anchor="w")
         self.attachments_label.pack(fill="x", pady=(0, 5))
-        composer = tk.Frame(footer, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+        composer = tk.Frame(footer, bg=self.PANEL, highlightbackground=self.ACCENT, highlightthickness=1)
         composer.pack(fill="x")
         self.input = tk.Text(
             composer, height=3, wrap="word", bg=self.PANEL, fg=self.TEXT,
@@ -273,13 +279,20 @@ class NexaDesktop:
             font=("Segoe UI", 10), padx=12, pady=10, undo=True,
         )
         self.input.pack(side="left", fill="both", expand=True)
+        self.input_placeholder = "Type your message here…  (Enter to send · Shift+Enter for a new line)"
+        self.input_placeholder_active = True
+        self.input.insert("1.0", self.input_placeholder)
+        self.input.configure(fg=self.MUTED)
+        self.input.bind("<FocusIn>", self._clear_input_placeholder)
+        self.input.bind("<FocusOut>", self._restore_input_placeholder)
+        self.input.bind("<Return>", self._send_enter)
         self.input.bind("<Control-Return>", self._send_hotkey)
         actions = tk.Frame(composer, bg=self.PANEL)
         actions.pack(side="right", fill="y", padx=8, pady=8)
         self.voice_button = ttk.Button(actions, text="🎙 Voice chat", style="Nexa.TButton", command=self.toggle_voice_chat)
         self.voice_button.pack(fill="x", pady=(0, 6))
-        ttk.Button(actions, text="Attach", style="Nexa.TButton", command=self.attach_file).pack(fill="x", pady=(0, 6))
-        self.send_button = ttk.Button(actions, text="Send  ↑", style="Accent.TButton", command=self.send_message, state="disabled")
+        ttk.Button(actions, text="Attach file", style="Nexa.TButton", command=self.attach_file).pack(fill="x", pady=(0, 6))
+        self.send_button = ttk.Button(actions, text="Send Message  ↑", style="Accent.TButton", command=self.send_message, state="disabled")
         self.send_button.pack(fill="x")
         self.speak_replies_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(footer, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(anchor="e", pady=(5, 0))
@@ -287,7 +300,38 @@ class NexaDesktop:
             footer,
             text="LOCAL & PRIVATE  ·  DEVELOPED BY NTECH",
             bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8),
-        ).pack(anchor="center", pady=(8, 0))
+        ).pack(anchor="center", pady=(5, 0))
+
+    def show_chat_workspace(self) -> None:
+        """Bring the chat composer into view and focus it for typing."""
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.chat.see("end")
+            self.input.focus_set()
+            if self.input_placeholder_active:
+                self._clear_input_placeholder()
+        except tk.TclError:
+            pass
+
+    def _clear_input_placeholder(self, _event=None) -> None:
+        if self.input_placeholder_active:
+            self.input.delete("1.0", "end")
+            self.input.configure(fg=self.TEXT)
+            self.input_placeholder_active = False
+
+    def _restore_input_placeholder(self, _event=None) -> None:
+        if not self.input_placeholder_active and not self.input.get("1.0", "end-1c").strip():
+            self.input.insert("1.0", self.input_placeholder)
+            self.input.configure(fg=self.MUTED)
+            self.input_placeholder_active = True
+
+    def _send_enter(self, event=None):
+        # Shift+Enter keeps the normal Text widget newline behaviour.
+        if event is not None and (event.state & 0x0001):
+            return None
+        self.send_message()
+        return "break"
 
     def _load_theme_preference(self) -> str:
         try:
@@ -660,6 +704,7 @@ class NexaDesktop:
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
                     self.send_button.configure(state="normal")
+                    self.root.after(80, self.show_chat_workspace)
                     self._append_message(
                         "Nexa AI",
                         "Qwen3 4B is ready and running locally. This is the only assistant model used for chat, coding, reasoning and n8n workflow design. You can now disconnect from the internet.",
@@ -724,6 +769,8 @@ class NexaDesktop:
                     self.voice_button.configure(state="normal", text="🎙 Voice chat")
                     self.status_var.set("Voice recognized · sending to local AI…")
                     self.input.delete("1.0", "end")
+                    self.input_placeholder_active = False
+                    self.input.configure(fg=self.TEXT)
                     self.input.insert("1.0", str(payload))
                     self.voice_turn = True
                     self.send_message()
@@ -780,10 +827,13 @@ class NexaDesktop:
     def send_message(self) -> None:
         if not self.ready or self.busy or self.uploading:
             return
-        text = self.input.get("1.0", "end-1c").strip()
+        text = "" if self.input_placeholder_active else self.input.get("1.0", "end-1c").strip()
         if not text and not self.pending_files:
             return
         self.input.delete("1.0", "end")
+        self.input_placeholder_active = False
+        self.input.configure(fg=self.TEXT)
+        self._restore_input_placeholder()
         self.busy = True
         self.send_button.configure(state="disabled")
         self.status_var.set("Nexa AI is thinking locally…")

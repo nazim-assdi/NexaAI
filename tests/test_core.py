@@ -15,6 +15,7 @@ from nexa_ai.file_store import StoredFile
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
+from nexa_ai.ui_layout import calculate_window_geometry
 from tools.smoke_test_runtime import build_smoke_payload
 
 
@@ -80,6 +81,14 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(config.access_log)
         self.assertEqual(config.host, "127.0.0.1")
         self.assertEqual(config.port, 8000)
+
+    def test_ui_layout_keeps_chat_composer_inside_768p_screen(self):
+        geometry = calculate_window_geometry(1366, 768)
+        self.assertEqual(geometry, "1120x628+123+70")
+
+    def test_ui_layout_adapts_to_small_laptop_display(self):
+        geometry = calculate_window_geometry(1024, 680)
+        self.assertEqual(geometry, "944x560+40+60")
 
     def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
         profiles = engine_profiles(cpu_count=4)
