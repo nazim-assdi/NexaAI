@@ -72,7 +72,7 @@ jobs:
           python -m unittest discover -s tests -v
 
       - name: Decide whether the full Qwen3 runtime smoke test is required
-        id: qwen-smoke
+        id: qwen_smoke
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -105,7 +105,7 @@ jobs:
           Write-Host "Full Qwen3 runtime smoke test required: $runSmoke"
 
       - name: End-to-end smoke test with the actual Qwen3 4B model on Windows
-        if: steps.qwen-smoke.outputs.required == 'true'
+        if: ${{ steps.qwen_smoke.outputs.required == 'true' }}
         shell: pwsh
         timeout-minutes: 35
         run: |
@@ -113,7 +113,7 @@ jobs:
           python tools/smoke_test_runtime.py --runtime "runtime\llama-server.exe" --model "$env:RUNNER_TEMP\Qwen3-4B-Q4_K_M.gguf" --log-dir "$env:RUNNER_TEMP\nexa-qwen3-smoke"
 
       - name: Skip full Qwen3 smoke test for UI-only changes
-        if: steps.qwen-smoke.outputs.required != 'true'
+        if: ${{ steps.qwen_smoke.outputs.required != 'true' }}
         run: echo "Skipped: this commit changes UI/packaging only. The current Qwen3 runtime was validated by the latest full-model Windows smoke test."
 
       - name: Build self-contained desktop application
