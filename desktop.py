@@ -30,7 +30,7 @@ from nexa_ai.voice_utils import resample_mono_int16
 APP_NAME = "Nexa AI"
 APP_VERSION = "2.0.0"
 MODEL_ID = OLLAMA_MODEL
-LOCAL_MODEL_PORT = 11435
+LOCAL_MODEL_PORT = 11439
 API_PORT = 8000
 SYSTEM_PROMPT = (
     "You are Nexa AI, a practical offline software developer and automation engineer. "
@@ -58,7 +58,7 @@ def app_data_dir() -> Path:
 def configure_environment() -> Path:
     data_dir = app_data_dir() / "Data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["NEXA_LOCAL_BASE_URL"] = "http://127.0.0.1:11434"
+    os.environ["NEXA_LOCAL_BASE_URL"] = "http://127.0.0.1:11439"
     os.environ["NEXA_LOCAL_API_KEY"] = ""
     os.environ.pop("NEXA_MM_PROJ_PATH", None)
     os.environ["NEXA_MODEL"] = OLLAMA_MODEL
