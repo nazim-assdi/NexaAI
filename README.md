@@ -1,92 +1,79 @@
-# Nexa AI 1.7.0 — NTech Edition · Verified Qwen3 Offline Assistant
+# NexaAI 1.8.0 — NTech Edition · Ollama + Gemma 3 1B
 
-Nexa AI is a Windows x64 desktop assistant built around **one and only one local chat model: Qwen3 4B Instruct Q4_K_M**. The same model handles Bengali/English chat, coding help, reasoning, JSON and n8n workflow design. There are no alternative chat, coder or vision LLMs in the app.
+NexaAI is a Windows x64 offline-first assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. This release replaces the bundled Qwen3/llama.cpp engine with **Ollama + Google Gemma 3 1B** to reduce model size and make local responses more practical on older CPUs.
 
 ## Install
 
-1. Open the [Nexa AI Releases page](https://github.com/nazim-assdi/NexaAI/releases).
-2. Download \`NexaAI-Setup-1.7.0-Windows-x64.exe\`.
-3. Install and launch Nexa AI.
-4. On first launch, NexaAI downloads the official Qwen3 GGUF (about 2.5 GB) using parallel HTTP range connections when supported, resumes completed segments after interruption, and verifies its SHA-256. Keep the internet connection active until this finishes.
+1. Install the official Ollama for Windows application from https://ollama.com/download/windows.
+2. Install and launch NexaAI 1.8.0.
+3. NexaAI detects the local Ollama service, starts it when needed, and automatically downloads the Gemma 3 1B model on first launch (about 806 MB).
+4. Keep the internet connected until the first model download finishes. Afterwards, chat and coding work locally without internet.
 
-The installer includes the desktop application and the llama.cpp Windows CPU runtime. The large Qwen3 model is downloaded into \`%LOCALAPPDATA%\\NexaAI\\models\`, avoiding a multi-gigabyte installer. Once downloaded, Qwen3 runs fully offline. No Ollama, Python installation, command-line setup, API key or cloud model subscription is required.
+Ollama is a prerequisite and is installed separately; it is not bundled in the NexaAI installer. NexaAI opens the official Ollama download page if it cannot find Ollama. The application connects only to the local Ollama endpoint at 127.0.0.1:11434. It keeps the model warm for 30 minutes to reduce repeated cold starts.
 
-## The only assistant model
+## The one assistant model
 
-**Qwen3 4B Instruct Q4_K_M**
+**Google Gemma 3 1B — Ollama tag: gemma3:1b**
 
-- Model repository: https://huggingface.co/Qwen/Qwen3-4B-GGUF
-- Exact file: \`Qwen3-4B-Q4_K_M.gguf\`
-- Approximate download: 2.5 GB
-- SHA-256: \`7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5\`
-- License: Apache-2.0
+- Approximate model size: 806 MB
+- Multilingual text model; supports more than 140 languages
+- CPU-only local inference; NexaAI uses a 4K context window and a small CPU thread count
+- One model handles chat, coding questions, reasoning, JSON and n8n workflow design
 
-The app downloads and checks this exact file automatically at first start. It is the single model used for chat, coding, debugging, reasoning and n8n workflow generation. NexaAI does not offer model switching or optional alternative LLM downloads.
+Gemma 3 1B is deliberately much smaller than Qwen3 4B. It is designed to be lighter and generally faster on older/low-memory PCs, but it is also less capable at difficult coding, long debugging sessions and large multi-file project work. It should not be expected to match larger local or cloud models. If advanced coding quality matters more than response speed, a larger model is preferable.
 
-The engine automatically tries balanced 4K, low-memory 2K and minimum-memory 1K CPU profiles. It uses CPU-only inference, mmap loading and fewer threads on older processors. Runtime-affecting Windows releases run an end-to-end test with the exact Qwen3 GGUF, server health endpoint and local chat completion. UI-only releases reuse the latest successful full-model runtime validation and run the complete unit-test suite. An 8 GB RAM computer can run this quantized model, but performance depends on available memory; close browsers and other heavy apps before using it. Integrated graphics may reserve part of system RAM. Responses will generally be slower and less capable than large cloud models.
+## Chat workspace and follow-up queue
 
-## Chat and coding
-
-NexaAI 1.7.0 uses a modern assistant workspace: a left navigation rail with new chat, search, tools and recent conversations; a central scrollable conversation timeline; welcome suggestions; and a rounded composer with attachment, voice and send controls. User messages appear on the right while assistant responses stream on the left. Assistant messages include a **Copy answer** action. Headings and fenced code sections receive light formatting.
-
-## Performance and response controls
-
-- **Quick** is the default response profile for older CPUs. **Balanced** and **Detailed** allow longer replies when needed.
-- Chat inference keeps the system prompt and the latest eight conversation messages for quicker prompt processing on long chats. The full conversation remains saved locally in Chat History.
-- Streaming updates are batched before repainting the chat window to reduce UI overhead.
-- Long answers expand the conversation feed without the old 120-line display ceiling. Use the chat scrollbar to read the full response and **Copy answer** to copy it all.
-- Headings and fenced code blocks receive readable formatting.
-
-## Voice reliability
-
-- Microphone capture selects a sample rate supported by the current Windows input device, then resamples the recording to 16 kHz for Whisper.
-- Whisper base runs with CPU int8, a small CPU thread count and beam size 1 for quicker transcription on older processors.
-- Windows speech output initializes COM on its worker thread before starting SAPI.
+- ChatGPT-inspired left sidebar, recent chats, conversation search, tools and a clean message composer.
+- User messages appear on the right and assistant answers stream on the left.
+- While NexaAI is answering, type your next question and press Enter or the Queue button. Up to four follow-up prompts are kept in order and sent automatically after the current answer finishes; a prompt is not silently discarded.
+- The status changes from preparing to writing when the first answer text arrives, rather than remaining on a generic thinking label.
+- Quick (384 tokens) is the default response profile. Balanced (768) and Detailed (1,280) are available when you need longer output.
+- Recent context is limited for faster processing; the full conversation remains in local Chat History.
+- Answers are fully scrollable, with copy controls and readable formatting for headings and fenced code.
 
 ## Chat History
 
-- Conversations are saved locally as you send messages and receive replies.
-- Open **Chat History** to browse, reopen or delete previous conversations.
-- History is stored under \`%LOCALAPPDATA%\\NexaAI\\Data\\chats\`.
-- Existing v1.0/v1.1 history files are recognised.
+- Conversations are saved locally as you send prompts and receive answers.
+- Open Chat History to browse, reopen or delete conversations.
+- History is stored under %LOCALAPPDATA%\NexaAI\Data\chats.
+- Existing history files are retained when you update NexaAI.
 
 ## Voice Chat
 
-Voice chat uses Qwen3 for the actual assistant conversation. Speech input needs a separate speech-to-text engine; this is not a second chat LLM.
+Voice uses the same Gemma 3 1B assistant for the conversation; speech recognition and speech output are separate voice components, not extra chat LLMs.
 
-- Microphone capture runs locally.
-- Multilingual speech recognition uses faster-whisper **base** on CPU (int8). The speech model is downloaded on first voice use (roughly 150 MB), then recognition works offline.
-- Speech replies use Windows SAPI voices already installed on the PC. No separate TTS model is required.
-- Bengali speech output depends on an installed Bengali Windows voice. Without one, Windows may use its default voice and Bengali pronunciation may be poor.
+- Microphone capture selects a sample rate supported by the Windows input device and resamples it to 16 kHz.
+- Multilingual voice input uses faster-whisper base on CPU int8. The Whisper model is downloaded on first voice use (about 150 MB), then speech recognition runs offline.
+- Speech replies use Windows SAPI voices already installed on the PC.
+- Bengali TTS quality depends on whether a Bengali Windows voice is installed.
 
-Voice model cache: \`%LOCALAPPDATA%\\NexaAI\\Voice\`.
+Voice cache: %LOCALAPPDATA%\NexaAI\Voice.
 
 ## n8n Workflow Studio
 
-Describe an automation in Bangla or English. The same Qwen3 model creates a workflow JSON, checks basic node names and connection references, and lets you copy or export the JSON for import into n8n.
+Describe an automation in Bangla or English. Gemma 3 1B creates workflow JSON, checks basic node names and connection references, and lets you copy or export the JSON for import into n8n.
 
-**The current studio generates and validates workflow JSON; it does not execute or monitor n8n workflows yet.** Import the JSON into your own n8n instance. A locally hosted n8n can run local workflows offline; nodes that contact Gmail, Facebook, cloud APIs or other internet services still require network access and configured credentials.
+The current studio generates and validates workflow JSON; it does not execute or monitor n8n workflows. Import the JSON into your own n8n instance. A locally hosted n8n can run local workflows offline; workflows that contact Gmail, Facebook or cloud APIs still need their own network access and credentials.
 
-## Plugins and appearance
+## Plugins, attachments and limits
 
-- **Plugin Manager:** import a local plugin ZIP, review it, and enable it explicitly. Plugin code runs with the same Windows permissions as NexaAI, so import only code you trust.
-- **Eye Comfort Premium** is the default theme. OLED Midnight and Soft Paper themes are also available.
-- Preferences are stored locally.
-
-## Supported attachments and limitations
-
-The one-model setup uses Qwen3 4B, a text-only model. It supports selectable-text PDFs and text/code documents. **Image/video understanding and scanned-PDF OCR are not included**, because they would require additional specialist models or OCR components. The app does not silently download another vision or coding LLM. Startup failures show recent llama.cpp log lines, process exit codes, available-RAM information, model checksum failures and port conflicts.
+- Plugin Manager can import a local plugin ZIP. Imported code runs with your Windows user permissions; only enable code you trust.
+- Supported attachments: selectable-text PDFs and text/code documents. Images, video understanding and scanned-PDF OCR are not included in this Gemma 3 1B text-only edition.
+- Eye Comfort, OLED Midnight and Soft Paper themes remain available.
+- The previous Qwen3 model file, if present in %LOCALAPPDATA%\NexaAI\models, is not used or automatically deleted by this update. Remove it manually only if you no longer need it and want to reclaim disk space.
 
 ## Privacy and offline operation
 
-- Qwen3 inference and the local API are bound to \`127.0.0.1\`.
-- Chat history, models, voice cache, preferences and plugins stay under \`%LOCALAPPDATA%\\NexaAI\`.
-- Internet is needed for the one-time Qwen3 download and first-time Whisper download. After those downloads, chat and voice recognition work locally.
-- External services used by n8n workflows still require their own network access.
-- NexaAI does not send conversations or attached text documents to a cloud AI API.
+- NexaAI sends chat requests to the local Ollama service on 127.0.0.1; it does not send chat text to a cloud AI API.
+- Chat history, preferences, voice cache and plugins stay under %LOCALAPPDATA%\NexaAI.
+- Internet is required to install Ollama and download Gemma 3 1B and, on first voice use, Whisper base. After setup, chat and speech recognition run locally.
+- External n8n nodes and services may still require internet access.
 
 ## Build from source
 
-The GitHub Actions workflow **Build Nexa AI Windows Offline Installer** compiles the app, runs the unit tests and creates the Windows x64 installer.
+The GitHub Actions workflow “Build Nexa AI Windows Offline Installer” compiles the app, runs the unit tests and creates the Windows x64 installer. Run the optional local smoke test with Ollama installed and Gemma 3 1B already pulled:
 
-See \`THIRD-PARTY-NOTICES.txt\` for upstream software and model licences.
+    python tools/smoke_test_runtime.py
+
+See THIRD-PARTY-NOTICES.txt for software and model licence information.

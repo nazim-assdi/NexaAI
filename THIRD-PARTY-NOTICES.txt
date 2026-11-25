@@ -1,16 +1,16 @@
-Nexa AI uses third-party software and downloads local model weights for on-device inference.
+NexaAI is an offline-first Windows desktop application and uses third-party software and a locally downloaded model.
 
-1. llama.cpp
-   Project: https://github.com/ggml-org/llama.cpp
-   License: MIT
-   The Windows CPU runtime is downloaded from the official ggml-org/llama.cpp release.
+1. Ollama (external prerequisite, not redistributed by NexaAI)
+   Project: https://github.com/ollama/ollama
+   Download: https://ollama.com/download/windows
+   Ollama must be installed separately by the user. NexaAI connects to its local API at 127.0.0.1:11434.
 
-2. Qwen3-4B-Instruct-GGUF Q4_K_M (downloaded automatically on first launch)
-   Project: https://huggingface.co/Qwen/Qwen3-4B-GGUF
-   License: Apache License 2.0
-   Exact file: Qwen3-4B-Q4_K_M.gguf
-   SHA-256: 7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5
-   This is the one and only chat/coding/reasoning model offered by Nexa AI.
+2. Google Gemma 3 1B (downloaded by Ollama on first launch)
+   Model library: https://ollama.com/library/gemma3
+   Model tag: gemma3:1b
+   Approximate download: 806 MB
+   Terms: https://ai.google.dev/gemma/terms
+   Gemma 3 1B is the single assistant model configured by this NexaAI edition.
 
 3. Python dependencies
    FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,
@@ -21,21 +21,20 @@ Nexa AI uses third-party software and downloads local model weights for on-devic
 4. Whisper base speech-recognition model (downloaded on first Voice Chat use)
    Project: https://github.com/openai/whisper
    Licence: MIT (see upstream project/model distribution).
-   This is a speech-to-text component for voice input, not an alternative chat LLM.
+   This is a speech-to-text component for voice input, not another chat LLM.
 
 5. imageio-ffmpeg
    Project: https://github.com/imageio/imageio-ffmpeg
-   License: BSD 2-Clause
+   License: BSD 2-Clause.
    The Windows wheel includes an FFmpeg executable obtained from upstream builds.
    FFmpeg's own licence depends on the options enabled in the binary; see
    https://ffmpeg.org/legal.html and the upstream build metadata.
 
 6. Windows SAPI voices
-   Nexa AI uses Windows speech voices already installed by the user. No voice is
-   redistributed by Nexa AI.
-
+   NexaAI uses Windows speech voices already installed by the user. No voice is
+   redistributed by NexaAI.
 
 7. Pillow
    Project: https://python-pillow.org/
-   License: HPND. Used only in the Windows build pipeline to create the multi-resolution
+   License: HPND. Used only in the Windows build pipeline to create multi-resolution
    application and installer icons; Pillow is not bundled with NexaAI.
