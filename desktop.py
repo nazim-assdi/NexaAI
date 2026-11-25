@@ -833,7 +833,6 @@ class NexaDesktop:
         self.input.delete("1.0", "end")
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
-        self._restore_input_placeholder()
         self.busy = True
         self.send_button.configure(state="disabled")
         self.status_var.set("Nexa AI is thinking locally…")
