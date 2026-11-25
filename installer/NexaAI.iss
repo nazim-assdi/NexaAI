@@ -1,14 +1,14 @@
 [Setup]
 AppId={{D32E4A64-9A42-4E8D-AC79-1AFD64FB1A10}
 AppName=Nexa AI
-AppVersion=1.8.0
+AppVersion=1.9.0
 AppPublisher=NTech
 DefaultDirName={localappdata}\Programs\NexaAI
 DefaultGroupName=Nexa AI
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\output
-OutputBaseFilename=NexaAI-Setup-1.8.0-Windows-x64
+OutputBaseFilename=NexaAI-Setup-1.9.0-Windows-x64
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
@@ -20,9 +20,9 @@ CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
 DiskSpanning=no
-VersionInfoVersion=1.8.0.0
+VersionInfoVersion=1.9.0.0
 VersionInfoProductName=Nexa AI
-VersionInfoDescription=Ollama Gemma 3 1B offline AI, voice and n8n desktop assistant
+VersionInfoDescription=Gemma Offline + FreeLM Cloud AI, voice and n8n desktop assistant
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

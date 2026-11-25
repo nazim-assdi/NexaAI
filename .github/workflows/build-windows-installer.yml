@@ -59,6 +59,7 @@ jobs:
           $pyinstallerArgs = @(
             "--noconfirm", "--clean", "--windowed", "--onedir", "--name", "NexaAI",
             "--icon", "assets/nexa-ai.ico",
+            "--collect-all", "freelm",
             "--collect-all", "fastapi",
             "--collect-all", "uvicorn",
             "--collect-all", "pydantic",
@@ -103,7 +104,7 @@ jobs:
       - name: Upload installable software
         uses: actions/upload-artifact@v4
         with:
-          name: NexaAI-Windows-x64-Offline-Installer
+          name: NexaAI-Windows-x64-Installer
           path: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt
@@ -133,10 +134,10 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v1.8.0
-          name: Nexa AI Desktop v1.8.0 — Ollama Gemma 3 1B
+          tag_name: desktop-v1.9.0
+          name: Nexa AI Desktop v1.9.0 — Gemma Offline + FreeLM Cloud
           body: |
-            Installable Windows x64 build of NexaAI. This edition uses Ollama as its local runtime and Google Gemma 3 1B (gemma3:1b, about 806 MB) as its single chat model. Install Ollama for Windows from https://ollama.com/download/windows before launching NexaAI for the first time. NexaAI detects or starts the local Ollama service, downloads Gemma 3 1B automatically, and then runs chats locally. After the one-time runtime and model setup, chat works offline.
+            Installable Windows x64 build of NexaAI 1.9.0. Offline mode uses Ollama + Google Gemma 3 1B (gemma3:1b, about 806 MB) and remains available without internet after setup. Optional Cloud mode uses FreeLM 0.5.2 to route requests through configured free-tier AI providers with quota-aware fallback. Add provider API keys in FreeLM Cloud Settings (stored in Windows Credential Manager), or explicitly enable public keyless endpoints. Cloud mode sends prompts to the selected provider; do not send confidential information to public keyless endpoints.
 
             The chat workspace supports queued follow-up messages (up to four waiting prompts), Quick/Balanced/Detailed reply lengths, bounded recent context, batched streaming updates, complete scrollable answers, copy controls, and readable headings/code blocks. Voice input uses a separate Whisper base speech-recognition component; Windows SAPI provides local speech output. Gemma 3 1B is a compact multilingual text model, so it is lighter and generally faster on older CPUs but less capable than larger models for complex multi-file coding. Image/video understanding and scanned-PDF OCR are not included.
           files: |

@@ -1,17 +1,27 @@
-# NexaAI 1.8.0 — NTech Edition · Ollama + Gemma 3 1B
+# NexaAI 1.9.0 — NTech Edition · Gemma Offline + FreeLM Cloud
 
 NexaAI is a Windows x64 offline-first assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. This release replaces the bundled Qwen3/llama.cpp engine with **Ollama + Google Gemma 3 1B** to reduce model size and make local responses more practical on older CPUs.
 
 ## Install
 
 1. Install the official Ollama for Windows application from https://ollama.com/download/windows.
-2. Install and launch NexaAI 1.8.0.
+2. Install and launch NexaAI 1.9.0.
 3. NexaAI detects the local Ollama service, starts it when needed, and automatically downloads the Gemma 3 1B model on first launch (about 806 MB).
 4. Keep the internet connected until the first model download finishes. Afterwards, chat and coding work locally without internet.
 
 Ollama is a prerequisite and is installed separately; it is not bundled in the NexaAI installer. NexaAI opens the official Ollama download page if it cannot find Ollama. The application connects only to the local Ollama endpoint at 127.0.0.1:11434. It keeps the model warm for 30 minutes to reduce repeated cold starts.
 
-## The one assistant model
+## AI modes
+
+**Offline mode — Google Gemma 3 1B (Ollama tag: `gemma3:1b`)** remains the default and keeps chat on this PC after initial setup.
+
+**Cloud mode — FreeLM 0.5.2** routes requests through supported free-tier providers such as Google Gemini, Groq, OpenRouter, Z.ai, Mistral, NVIDIA NIM, Cohere and Cloudflare Workers AI. It supports streaming, quota-aware provider selection and failover between available providers. Cloud mode requires internet access and either a provider key or explicit permission to use public keyless endpoints. Free-tier quotas and model availability vary by provider and may change.
+
+Open **FreeLM Cloud Settings** from the sidebar to add API keys. Keys are stored in Windows Credential Manager and are never written to NexaAI source code or preferences. Public Kilo Gateway / OVHcloud endpoints remain disabled until the user explicitly enables them. Those public endpoints may log prompts; do not send confidential information to them. API providers may process prompts under their own data-use terms.
+
+Switch between **Offline · Gemma** and **Cloud · FreeLM** from the model selector in the top bar. Cloud model routing uses FreeLM's `chat:large` alias; the concrete provider/model may vary as free models change.
+
+### Offline model details
 
 **Google Gemma 3 1B — Ollama tag: gemma3:1b**
 
@@ -65,9 +75,10 @@ The current studio generates and validates workflow JSON; it does not execute or
 
 ## Privacy and offline operation
 
-- NexaAI sends chat requests to the local Ollama service on 127.0.0.1; it does not send chat text to a cloud AI API.
-- Chat history, preferences, voice cache and plugins stay under %LOCALAPPDATA%\NexaAI.
-- Internet is required to install Ollama and download Gemma 3 1B and, on first voice use, Whisper base. After setup, chat and speech recognition run locally.
+- In Offline mode, NexaAI sends chat requests only to the local Ollama service on 127.0.0.1.
+- In Cloud mode, chat content and selected text attachments are sent to the FreeLM provider selected for that request. Provider privacy and retention terms apply. Public keyless endpoints are disabled unless the user explicitly enables them.
+- API keys are stored in the current Windows user's Credential Manager. Chat history, preferences, voice cache and plugins stay under %LOCALAPPDATA%\NexaAI.
+- Internet is required for FreeLM Cloud mode, initial Ollama/model downloads and first-use Whisper setup. Offline chat and speech recognition continue to work without internet after setup.
 - External n8n nodes and services may still require internet access.
 
 ## Build from source

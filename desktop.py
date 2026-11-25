@@ -29,7 +29,7 @@ from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 MODEL_ID = OLLAMA_MODEL
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -40,7 +40,7 @@ SYSTEM_PROMPT = (
     "For coding tasks, provide complete runnable code, explain filenames and setup, and point out assumptions. "
     "For n8n tasks, design valid node connections and realistic parameters, use credential placeholders, and never invent secrets. "
     "Do not claim that code or workflows were executed or tested unless the app actually reports that. "
-    "You run locally and do not have live internet access; be clear when up-to-date external details cannot be checked."
+    "You do not have live browsing access unless a connected tool explicitly provides it; be clear when up-to-date external details cannot be checked."
 )
 
 
@@ -133,6 +133,8 @@ class NexaDesktop:
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
         self.response_profile = self._load_response_preference()
+        self.chat_mode = self._load_chat_mode()
+        self.active_request_mode = self.chat_mode
         self._voice_capture_rate = 16000
         self.recording_warnings = ""
         self.pending_send_queue: list[str] = []
@@ -189,13 +191,14 @@ class NexaDesktop:
         brand_copy = tk.Frame(brand, bg=self.PANEL)
         brand_copy.pack(side="left", fill="x", expand=True)
         tk.Label(brand_copy, text="Nexa AI", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(anchor="w")
-        tk.Label(brand_copy, text="PRIVATE · OFFLINE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(1, 0))
+        tk.Label(brand_copy, text="OFFLINE + CLOUD", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(1, 0))
 
         self._sidebar_button(sidebar, "＋   New chat", self.new_conversation, accent=True).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⌕   Search conversations", self.open_history).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⚙   n8n Workflow Studio", self.open_n8n_studio).pack(fill="x", padx=11, pady=(0, 4))
         self._sidebar_button(sidebar, "▦   Plugin Manager", self.open_plugin_manager).pack(fill="x", padx=11, pady=(0, 4))
-        self._sidebar_button(sidebar, "⬇   Install / update Ollama", self.open_ollama_download).pack(fill="x", padx=11, pady=(0, 14))
+        self._sidebar_button(sidebar, "⬇   Install / update Ollama", self.open_ollama_download).pack(fill="x", padx=11, pady=(0, 4))
+        self._sidebar_button(sidebar, "☁   FreeLM Cloud Settings", self.open_cloud_settings).pack(fill="x", padx=11, pady=(0, 14))
 
         tk.Label(sidebar, text="RECENT", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=18, pady=(2, 8))
         self.recent_chats_frame = tk.Frame(sidebar, bg=self.PANEL)
@@ -217,7 +220,8 @@ class NexaDesktop:
         top.pack(fill="x")
         top.pack_propagate(False)
         tk.Label(top, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 13)).pack(side="left", padx=(24, 10))
-        tk.Label(top, text="Gemma 3 1B", bg=self.PANEL_2, fg=self.TEXT, font=("Segoe UI", 8), padx=9, pady=5).pack(side="left")
+        self.model_badge = tk.Label(top, text=self._chat_mode_badge(), bg=self.PANEL_2, fg=self.TEXT, font=("Segoe UI", 8), padx=9, pady=5)
+        self.model_badge.pack(side="left")
         self.status_var = tk.StringVar(value="Starting local engine…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
         self.status_label.pack(side="right", padx=(8, 17))
@@ -233,6 +237,14 @@ class NexaDesktop:
         )
         self.response_selector.pack(side="right", padx=7)
         self.response_selector.bind("<<ComboboxSelected>>", self._change_response_profile)
+        self.chat_mode_var = tk.StringVar(value=self._chat_mode_choice())
+        self.chat_mode_selector = ttk.Combobox(
+            top, textvariable=self.chat_mode_var,
+            values=["Offline · Gemma", "Cloud · FreeLM"],
+            state="readonly", width=16, font=("Segoe UI", 8),
+        )
+        self.chat_mode_selector.pack(side="right", padx=7)
+        self.chat_mode_selector.bind("<<ComboboxSelected>>", self._change_chat_mode)
         self.ttk_style = style
 
         chat_stage = tk.Frame(main, bg=self.BG)
@@ -284,7 +296,7 @@ class NexaDesktop:
         footer_note.pack(fill="x", padx=32, pady=(6, 0))
         self.speak_replies_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(footer_note, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(side="left")
-        tk.Label(footer_note, text="Your chats stay on this PC · NTech", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
+        tk.Label(footer_note, text="Chats stay on this PC unless Cloud mode is selected · NTech", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
 
     def _sidebar_button(self, parent, label: str, command, accent: bool = False):
         return tk.Button(parent, text=label, command=command, anchor="w", bg=self.PANEL_2 if accent else self.PANEL, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"] if accent else self.TEXT, activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, relief="flat", borderwidth=0, padx=13, pady=10, font=("Segoe UI Semibold" if accent else "Segoe UI", 9), cursor="hand2")
@@ -363,7 +375,7 @@ class NexaDesktop:
         center.place(relx=0.5, rely=0.48, anchor="center")
         tk.Label(center, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 18), width=2, height=1).pack(pady=(0, 15))
         tk.Label(center, text="What can I help with?", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 22)).pack(pady=(0, 7))
-        tk.Label(center, text="Chat, code, debug or build an automation — all locally with Gemma 3 1B.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
+        tk.Label(center, text="Chat, code, debug or build an automation — choose Offline Gemma or Cloud FreeLM.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
         cards = tk.Frame(center, bg=self.BG)
         cards.pack()
         for index, (title, description, prompt) in enumerate(CHAT_SUGGESTIONS):
@@ -417,6 +429,20 @@ class NexaDesktop:
             return selected if selected in self.THEMES else "NTech Chat Dark"
         except (OSError, ValueError, AttributeError):
             return "NTech Chat Dark"
+
+    def _load_chat_mode(self) -> str:
+        try:
+            prefs = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            value = str(prefs.get("chat_mode", "local")).strip().lower()
+            return value if value in {"local", "freelm"} else "local"
+        except (OSError, ValueError, AttributeError):
+            return "local"
+
+    def _chat_mode_choice(self) -> str:
+        return "Cloud · FreeLM" if self.chat_mode == "freelm" else "Offline · Gemma"
+
+    def _chat_mode_badge(self) -> str:
+        return "FreeLM Cloud · chat:large" if self.chat_mode == "freelm" else "Gemma 3 1B"
 
     def _set_palette(self, theme_name: str) -> None:
         palette = self.THEMES.get(theme_name, self.THEMES["Eye Comfort Premium"])
@@ -479,9 +505,35 @@ class NexaDesktop:
         self._save_preferences()
         self.status_var.set(f"Response length set to {self.response_profile.lower()}")
 
+    def _change_chat_mode(self, _event=None) -> None:
+        if self.busy or self.uploading or self.recording:
+            self.chat_mode_var.set(self._chat_mode_choice())
+            self.status_var.set("Finish the current task before switching AI mode")
+            return
+        selected = self.chat_mode_var.get()
+        self.chat_mode = "freelm" if selected == "Cloud · FreeLM" else "local"
+        self.model_badge.configure(text=self._chat_mode_badge())
+        self._save_preferences()
+        if self.chat_mode == "freelm":
+            self.status_var.set("Cloud mode selected · prompts are sent to FreeLM providers")
+            self.status_label.configure(fg=self.ACCENT)
+            try:
+                from nexa_ai.cloud_runtime import provider_status
+                if not provider_status()["configured"]:
+                    self.status_var.set("Cloud mode selected · configure FreeLM Cloud Settings")
+            except Exception:
+                self.status_var.set("Cloud mode selected · open FreeLM Cloud Settings")
+        else:
+            self.status_var.set("● Offline model selected · Gemma 3 1B")
+            self.status_label.configure(fg="#73d6a4")
+
     def _save_preferences(self) -> None:
         try:
-            payload = {"theme": self.theme_name, "response_profile": getattr(self, "response_profile", "Quick")}
+            payload = {
+                "theme": self.theme_name,
+                "response_profile": getattr(self, "response_profile", "Quick"),
+                "chat_mode": getattr(self, "chat_mode", "local"),
+            }
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.preferences_path)
@@ -494,6 +546,141 @@ class NexaDesktop:
             self.status_var.set("Install Ollama, then restart NexaAI")
         except Exception as exc:
             messagebox.showerror("Ollama setup", f"Open https://ollama.com/download/windows and install Ollama.\\n\\n{exc}")
+
+    def open_cloud_settings(self) -> None:
+        from nexa_ai import cloud_runtime
+
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · FreeLM Cloud Settings")
+        window.geometry("760x760")
+        window.minsize(680, 620)
+        window.configure(bg=self.BG)
+        tk.Label(window, text="FreeLM Cloud", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 19)).pack(anchor="w", padx=22, pady=(18, 3))
+        tk.Label(
+            window,
+            text="Connect free-tier cloud AI providers. Your prompts leave this PC only when Cloud · FreeLM mode is selected.",
+            bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9), wraplength=700, justify="left",
+        ).pack(anchor="w", padx=22, pady=(0, 12))
+
+        body = tk.Frame(window, bg=self.BG)
+        body.pack(fill="both", expand=True, padx=18)
+        status_snapshot = cloud_runtime.provider_status()
+        saved_fields = set(status_snapshot.get("saved_fields", []))
+        entries: dict[str, Any] = {}
+        saved_labels: dict[str, Any] = {}
+
+        providers = [
+            ("gemini", "Google Gemini", "https://aistudio.google.com/apikey"),
+            ("groq", "Groq", "https://console.groq.com/keys"),
+            ("openrouter", "OpenRouter", "https://openrouter.ai/keys"),
+            ("zai", "Z.ai", "https://z.ai/manage-apikey/apikey-list"),
+            ("mistral", "Mistral", "https://console.mistral.ai/api-keys"),
+            ("nvidia", "NVIDIA NIM", "https://build.nvidia.com/settings/api-keys"),
+            ("cohere", "Cohere", "https://dashboard.cohere.com/api-keys"),
+            ("cloudflare_token", "Cloudflare API Token", "https://dash.cloudflare.com/profile/api-tokens"),
+            ("cloudflare_account_id", "Cloudflare Account ID", "https://dash.cloudflare.com/"),
+            ("kilo", "Kilo Gateway (optional)", "https://app.kilo.ai"),
+        ]
+        for slot, label, url in providers:
+            row = tk.Frame(body, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=label, bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 9), width=24, anchor="w").grid(row=0, column=0, padx=(10, 7), pady=7, sticky="w")
+            entry = ttk.Entry(row, show="•", width=39)
+            entry.grid(row=0, column=1, padx=5, pady=7, sticky="ew")
+            entries[slot] = entry
+            saved_text = "Saved securely" if slot in saved_fields else "Not set"
+            saved_label = tk.Label(row, text=saved_text, bg=self.PANEL, fg="#85c99a" if slot in saved_fields else self.MUTED, font=("Segoe UI", 8), width=14, anchor="w")
+            saved_label.grid(row=0, column=2, padx=(5, 8), pady=7)
+            saved_labels[slot] = saved_label
+            tk.Button(
+                row, text="Get key", command=lambda target=url: webbrowser.open(target),
+                bg=self.PANEL_2, fg=self.TEXT, activebackground=self.BORDER, activeforeground=self.TEXT,
+                relief="flat", borderwidth=0, padx=8, pady=5, font=("Segoe UI", 8), cursor="hand2",
+            ).grid(row=0, column=3, padx=(0, 8), pady=6)
+            row.grid_columnconfigure(1, weight=1)
+
+        public_var = tk.BooleanVar(value=cloud_runtime.load_settings()["allow_public_endpoints"])
+        public_frame = tk.Frame(body, bg=self.PANEL_2, padx=10, pady=8)
+        public_frame.pack(fill="x", pady=(9, 4))
+        ttk.Checkbutton(
+            public_frame,
+            text="Allow public keyless endpoints (Kilo Gateway / OVHcloud)",
+            variable=public_var,
+        ).pack(anchor="w")
+        tk.Label(
+            public_frame,
+            text="These endpoints need no API key, but free routes may log prompts and have low limits. Do not send passwords, private files or confidential data.",
+            bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8), wraplength=680, justify="left",
+        ).pack(anchor="w", pady=(4, 0))
+
+        footer = tk.Frame(window, bg=self.BG)
+        footer.pack(fill="x", padx=20, pady=(10, 16))
+        status = tk.Label(footer, text="FreeLM automatically switches between available free providers when one is limited.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), anchor="w", wraplength=420)
+        status.pack(side="left", fill="x", expand=True)
+
+        def refresh_saved_labels() -> None:
+            status_snapshot = cloud_runtime.provider_status()
+            current_saved = set(status_snapshot.get("saved_fields", []))
+            for slot, label_widget in saved_labels.items():
+                is_saved = slot in current_saved
+                label_widget.configure(text="Saved securely" if is_saved else "Not set", fg="#85c99a" if is_saved else self.MUTED)
+
+        def save_form(show_message: bool = True) -> bool:
+            try:
+                for slot, entry in entries.items():
+                    value = entry.get().strip()
+                    if value:
+                        cloud_runtime.save_provider_key(slot, value)
+                        entry.delete(0, "end")
+                cloud_runtime.save_settings(allow_public_endpoints=public_var.get())
+                refresh_saved_labels()
+                if show_message:
+                    status.configure(text="Saved in Windows Credential Manager.", fg="#85c99a")
+                return True
+            except Exception as exc:
+                messagebox.showerror("FreeLM settings", str(exc), parent=window)
+                return False
+
+        def test_connection() -> None:
+            if not save_form(show_message=False):
+                return
+            test_button.configure(state="disabled", text="Testing…")
+            status.configure(text="Contacting a FreeLM provider…", fg=self.ACCENT)
+
+            def worker() -> None:
+                try:
+                    result = cloud_runtime.test_connection()
+                    message = f"Connected: {result['provider']} · {result['model']} · {result['response']}"
+                    colour = "#85c99a"
+                except Exception as exc:
+                    message = f"Connection failed: {exc}"
+                    colour = "#e18b82"
+                def finish() -> None:
+                    if not window.winfo_exists():
+                        return
+                    test_button.configure(state="normal", text="Test connection")
+                    status.configure(text=message, fg=colour)
+                self.root.after(0, finish)
+
+            threading.Thread(target=worker, daemon=True, name="NexaFreeLMTest").start()
+
+        def clear_keys() -> None:
+            if not messagebox.askyesno("Clear FreeLM keys", "Remove all saved FreeLM provider keys from Windows Credential Manager?", parent=window):
+                return
+            try:
+                for slot in entries:
+                    cloud_runtime.delete_provider_key(slot)
+                    entries[slot].delete(0, "end")
+                refresh_saved_labels()
+                status.configure(text="Saved provider keys removed.", fg=self.MUTED)
+            except Exception as exc:
+                messagebox.showerror("FreeLM settings", str(exc), parent=window)
+
+        ttk.Button(footer, text="Save settings", style="Nexa.TButton", command=save_form).pack(side="right", padx=(6, 0))
+        test_button = ttk.Button(footer, text="Test connection", style="Accent.TButton", command=test_connection)
+        test_button.pack(side="right", padx=6)
+        ttk.Button(footer, text="Clear keys", style="Nexa.TButton", command=clear_keys).pack(side="right", padx=6)
+        ttk.Button(footer, text="Close", style="Nexa.TButton", command=window.destroy).pack(side="right", padx=6)
 
     def open_plugin_manager(self) -> None:
         window = tk.Toplevel(self.root)
@@ -817,7 +1004,8 @@ class NexaDesktop:
                 elif kind == "done":
                     self.busy = False
                     self.send_button.configure(state="normal" if self.ready else "disabled", text="↑")
-                    self.status_var.set("● Offline model ready")
+                    active_mode = getattr(self, "active_request_mode", self.chat_mode)
+                    self.status_var.set("● FreeLM Cloud ready" if active_mode == "freelm" else "● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._finish_assistant_message()
                     self._scroll_chat_to_bottom()
@@ -857,7 +1045,7 @@ class NexaDesktop:
                         self.status_label.configure(fg=self.ACCENT)
                 elif kind == "voice_transcribed":
                     self.voice_button.configure(state="normal", text="🎙 Voice")
-                    self.status_var.set("Voice recognized · sending to local AI…")
+                    self.status_var.set("Voice recognized · sending to selected AI…")
                     self.input.delete("1.0", "end")
                     self.input_placeholder_active = False
                     self.input.configure(fg=self.TEXT)
@@ -940,8 +1128,9 @@ class NexaDesktop:
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
         self.busy = True
+        self.active_request_mode = self.chat_mode
         self.send_button.configure(state="normal", text="Queue")
-        self.status_var.set("Preparing local response…")
+        self.status_var.set("Preparing FreeLM Cloud response…" if self.active_request_mode == "freelm" else "Preparing local response…")
         self.status_label.configure(fg=self.ACCENT)
         attachments = list(self.pending_files)
         self.pending_files.clear()
@@ -959,7 +1148,7 @@ class NexaDesktop:
         self._append_message("You", visible_text, "user")
         self._append_message("Nexa AI", "", "assistant")
         max_tokens = response_token_limit(self.response_profile_var.get())
-        threading.Thread(target=self._stream_request, args=(max_tokens,), daemon=True, name="NexaResponse").start()
+        threading.Thread(target=self._stream_request, args=(max_tokens, self.active_request_mode), daemon=True, name="NexaResponse").start()
 
     def _send_next_queued(self) -> None:
         if not self.ready or self.busy or not self.pending_send_queue:
@@ -973,11 +1162,12 @@ class NexaDesktop:
         self.input.configure(fg=self.TEXT)
         self.send_message()
 
-    def _stream_request(self, max_tokens: int = 768) -> None:
+    def _stream_request(self, max_tokens: int = 768, provider: str = "local") -> None:
         answer: list[str] = []
         try:
             payload = {
-                "model": self.current_model_id,
+                "model": "chat:large" if provider == "freelm" else self.current_model_id,
+                "provider": provider,
                 "messages": build_chat_context(self.messages, max_recent_messages=12),
                 "stream": True,
                 "temperature": 0.55,
@@ -1018,7 +1208,7 @@ class NexaDesktop:
                                 self.events.put(("stream", str(piece)))
             final_answer = "".join(answer).strip()
             if not final_answer:
-                raise RuntimeError("Gemma 3 1B returned no visible answer. Check the Ollama model status and try again.")
+                raise RuntimeError("The selected AI provider returned no visible answer. Check its status and try again.")
             self.messages.append({"role": "assistant", "content": final_answer})
             self._save_chat()
             self.events.put(("done", None))

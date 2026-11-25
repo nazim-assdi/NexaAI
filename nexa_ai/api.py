@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None
+    provider: str = "local"
 
 
 def _error(message: str, status_code: int = 400):
@@ -67,7 +68,18 @@ def chat_completions(request: ChatRequest):
     if not request.messages:
         return _error("messages must contain at least one message.")
     request_id = f"chatcmpl-{uuid4().hex[:16]}"
-    model = request.model or settings.model
+    provider = str(request.provider or "local").strip().lower()
+    if provider not in {"local", "freelm"}:
+        return _error("provider must be either 'local' or 'freelm'.")
+    if provider == "freelm":
+        from . import cloud_runtime
+        model = request.model if request.model and request.model != settings.model else "chat:large"
+        generate = cloud_runtime.generate_text
+        stream = cloud_runtime.stream_text
+    else:
+        model = request.model or settings.model
+        generate = local_backend.generate_text
+        stream = local_backend.stream_text
 
     if request.stream:
         def event_stream():
@@ -76,7 +88,7 @@ def chat_completions(request: ChatRequest):
             first = dict(base, choices=[{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}])
             yield f"data: {json.dumps(first, ensure_ascii=False)}\n\n"
             try:
-                for piece in local_backend.stream_text(request.messages, model, request.temperature, request.max_tokens):
+                for piece in stream(request.messages, model, request.temperature, request.max_tokens):
                     chunk = dict(base, choices=[{"index": 0, "delta": {"content": piece}, "finish_reason": None}])
                     yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 final = dict(base, choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}])
@@ -91,7 +103,7 @@ def chat_completions(request: ChatRequest):
         )
 
     try:
-        answer = local_backend.generate_text(request.messages, model, request.temperature, request.max_tokens)
+        answer = generate(request.messages, model, request.temperature, request.max_tokens)
         return {
             "id": request_id,
             "object": "chat.completion",
