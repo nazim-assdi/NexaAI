@@ -25,11 +25,12 @@ from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
-from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit
+from nexa_ai.voice_utils import resample_mono_int16
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -139,6 +140,8 @@ class NexaDesktop:
         self.conversation_title = "New conversation"
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
+        self.response_profile = self._load_response_preference()
+        self._voice_capture_rate = 16000
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
         self.current_model_key = QWEN3_MODEL_KEY
@@ -229,6 +232,14 @@ class NexaDesktop:
         self.theme_selector = ttk.Combobox(top, textvariable=self.theme_var, values=list(self.THEMES.keys()), state="readonly", width=17, font=("Segoe UI", 8))
         self.theme_selector.pack(side="right", padx=7)
         self.theme_selector.bind("<<ComboboxSelected>>", self._change_theme)
+        self.response_profile_var = tk.StringVar(value=self.response_profile)
+        self.response_selector = ttk.Combobox(
+            top, textvariable=self.response_profile_var,
+            values=["Quick", "Balanced", "Detailed"],
+            state="readonly", width=10, font=("Segoe UI", 8),
+        )
+        self.response_selector.pack(side="right", padx=7)
+        self.response_selector.bind("<<ComboboxSelected>>", self._change_response_profile)
         self.ttk_style = style
 
         chat_stage = tk.Frame(main, bg=self.BG)
@@ -347,6 +358,7 @@ class NexaDesktop:
             child.destroy()
         self.current_assistant_widget = None
         self.current_assistant_row = None
+        self.current_assistant_copy_button = None
         self.empty_state = None
 
     def _show_empty_state(self) -> None:
@@ -460,9 +472,23 @@ class NexaDesktop:
         for child in widget.winfo_children():
             self._retheme_widget(child, colour_map)
 
+    def _load_response_preference(self) -> str:
+        try:
+            payload = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            profile = str(payload.get("response_profile", "Quick"))
+            return profile if profile in {"Quick", "Balanced", "Detailed"} else "Quick"
+        except (OSError, ValueError, AttributeError):
+            return "Quick"
+
+    def _change_response_profile(self, _event=None) -> None:
+        selected = self.response_profile_var.get()
+        self.response_profile = selected if selected in {"Quick", "Balanced", "Detailed"} else "Quick"
+        self._save_preferences()
+        self.status_var.set(f"Response length set to {self.response_profile.lower()}")
+
     def _save_preferences(self) -> None:
         try:
-            payload = {"theme": self.theme_name}
+            payload = {"theme": self.theme_name, "response_profile": getattr(self, "response_profile", "Quick")}
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.preferences_path)
@@ -572,7 +598,7 @@ class NexaDesktop:
             line_count = max(1, int(display_lines[0])) if display_lines else 1
         except (IndexError, TypeError, tk.TclError):
             line_count = max(1, text.count("\n") + 1)
-        widget.configure(height=min(120, line_count))
+        widget.configure(height=line_count)
         widget.bind("<MouseWheel>", self._on_chat_mousewheel)
         return widget
 
@@ -598,13 +624,65 @@ class NexaDesktop:
             body = tk.Frame(row, bg=self.BG)
             body.pack(fill="x", padx=(31, 0))
             message_widget = self._make_message_text(body, text, self.BG, self.TEXT, text_width, 1, 2)
+            actions = tk.Frame(row, bg=self.BG)
+            actions.pack(fill="x", padx=(31, 0), pady=(4, 0))
+            copy_button = tk.Button(actions, text="⧉  Copy answer", command=lambda w=message_widget: self._copy_message_text(w), bg=self.BG, fg=self.MUTED, activebackground=self.PANEL_2, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=8, pady=3, cursor="hand2", state="normal" if text else "disabled")
+            copy_button.pack(side="left")
             if not text:
                 self.current_assistant_widget = message_widget
                 self.current_assistant_row = row
+                self.current_assistant_copy_button = copy_button
             else:
+                self._format_message_widget(message_widget)
                 self.current_assistant_widget = None
                 self.current_assistant_row = None
+                self.current_assistant_copy_button = None
         self._scroll_chat_to_bottom()
+
+    def _copy_message_text(self, widget) -> None:
+        try:
+            content = widget.get("1.0", "end-1c")
+            self.root.clipboard_clear()
+            self.root.clipboard_append(content)
+            self.status_var.set("Answer copied to clipboard")
+            self.status_label.configure(fg="#73d6a4")
+        except tk.TclError as exc:
+            messagebox.showerror("Copy answer", str(exc))
+
+    def _format_message_widget(self, widget) -> None:
+        try:
+            widget.configure(state="normal")
+            lines = widget.get("1.0", "end-1c").splitlines()
+            in_code = False
+            for number, line in enumerate(lines, start=1):
+                start, end = f"{number}.0", f"{number}.end"
+                if line.strip().startswith("```"):
+                    in_code = not in_code
+                    widget.tag_add("codeblock", start, end)
+                elif in_code:
+                    widget.tag_add("codeblock", start, end)
+                elif line.lstrip().startswith("#"):
+                    widget.tag_add("heading", start, end)
+            widget.configure(state="disabled")
+        except tk.TclError:
+            try:
+                widget.configure(state="disabled")
+            except tk.TclError:
+                pass
+
+    def _finish_assistant_message(self) -> None:
+        widget = self.current_assistant_widget
+        button = self.current_assistant_copy_button
+        if widget is not None and widget.winfo_exists():
+            self._format_message_widget(widget)
+        if button is not None:
+            try:
+                button.configure(state="normal")
+            except tk.TclError:
+                pass
+        self.current_assistant_widget = None
+        self.current_assistant_row = None
+        self.current_assistant_copy_button = None
 
     def _append_stream(self, text: str) -> None:
         widget = self.current_assistant_widget
@@ -632,7 +710,7 @@ class NexaDesktop:
                 pass
         self.current_assistant_widget = None
         self.current_assistant_row = None
-
+        self.current_assistant_copy_button = None
 
 
     def _boot_engine(self) -> None:
@@ -825,9 +903,20 @@ class NexaDesktop:
         return False
 
     def _poll_events(self) -> None:
+        stream_parts: list[str] = []
+
+        def flush_stream() -> None:
+            if stream_parts:
+                self._append_stream("".join(stream_parts))
+                stream_parts.clear()
+
         try:
             while True:
                 kind, payload = self.events.get_nowait()
+                if kind == "stream":
+                    stream_parts.append(str(payload))
+                    continue
+                flush_stream()
                 if kind == "ready":
                     self.ready = True
                     self.status_var.set("● Offline model ready")
@@ -846,9 +935,7 @@ class NexaDesktop:
                         percent = done * 100 / total
                         remaining = max(0, total - done)
                         eta = f" · ETA {remaining / speed:.0f}s" if speed > 0 else ""
-                        self.status_var.set(
-                            f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}"
-                        )
+                        self.status_var.set(f"Downloading Qwen3 4B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
                     else:
                         self.status_var.set(f"Downloading Qwen3 4B · {done / (1024 ** 2):.0f} MB · {rate}")
                     self.status_label.configure(fg=self.ACCENT)
@@ -856,15 +943,12 @@ class NexaDesktop:
                     self.status_var.set("Offline engine failed to start")
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror("Nexa AI could not start", str(payload))
-                elif kind == "stream":
-                    self._append_stream(str(payload))
                 elif kind == "done":
                     self.busy = False
                     self.send_button.configure(state="normal" if self.ready else "disabled")
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
-                    self.current_assistant_widget = None
-                    self.current_assistant_row = None
+                    self._finish_assistant_message()
                     self._scroll_chat_to_bottom()
                     if self.voice_turn:
                         self.voice_turn = False
@@ -891,8 +975,12 @@ class NexaDesktop:
                     messagebox.showerror("Attachment error", str(payload))
                 elif kind == "voice_status":
                     self.status_var.set(str(payload))
+                    if "Listening" in str(payload):
+                        self.status_label.configure(fg="#d6b66d")
+                    elif "Transcrib" in str(payload) or "Whisper" in str(payload):
+                        self.status_label.configure(fg=self.ACCENT)
                 elif kind == "voice_transcribed":
-                    self.voice_button.configure(state="normal", text="🎙 Voice chat")
+                    self.voice_button.configure(state="normal", text="🎙 Voice")
                     self.status_var.set("Voice recognized · sending to local AI…")
                     self.input.delete("1.0", "end")
                     self.input_placeholder_active = False
@@ -901,17 +989,17 @@ class NexaDesktop:
                     self.voice_turn = True
                     self.send_message()
                 elif kind == "voice_error":
-                    self.voice_button.configure(state="normal", text="🎙 Voice chat")
+                    self.voice_button.configure(state="normal", text="🎙 Voice")
                     self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
                     self.recording = False
                     self.voice_turn = False
                     self.status_var.set("Voice chat unavailable")
+                    self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror("Voice chat", str(payload))
         except queue.Empty:
-            pass
+            flush_stream()
         if self.root.winfo_exists():
-            self.root.after(100, self._poll_events)
-
+            self.root.after(80, self._poll_events)
     def _refresh_attachments(self) -> None:
         names = [item.get("filename", "file") for item in self.pending_files]
         self.attachments_label.configure(text=("Attached: " + "  ·  ".join(names)) if names else "")
@@ -978,14 +1066,18 @@ class NexaDesktop:
             visible_text += "\n\n" + "\n".join(f"📎 {x.get('filename', 'file')}" for x in attachments)
         self._append_message("You", visible_text, "user")
         self._append_message("Nexa AI", "", "assistant")
-        threading.Thread(target=self._stream_request, daemon=True, name="NexaResponse").start()
+        max_tokens = response_token_limit(self.response_profile_var.get())
+        threading.Thread(target=self._stream_request, args=(max_tokens,), daemon=True, name="NexaResponse").start()
 
-    def _stream_request(self) -> None:
+    def _stream_request(self, max_tokens: int = 768) -> None:
         answer: list[str] = []
         try:
             payload = {
-                "model": self.current_model_id, "messages": self.messages, "stream": True,
-                "temperature": 0.6, "max_tokens": 3072,
+                "model": self.current_model_id,
+                "messages": build_chat_context(self.messages, max_recent_messages=8),
+                "stream": True,
+                "temperature": 0.55,
+                "max_tokens": int(max_tokens),
             }
             with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
                 with client.stream("POST", f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload) as response:
