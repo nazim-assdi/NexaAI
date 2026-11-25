@@ -138,9 +138,42 @@ jobs:
             "desktop.py"
           )
           python -m PyInstaller @pyinstallerArgs
-          if (-not (Test-Path "dist\\NexaAI\\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
-          if (-not (Test-Path "build-assets\\ollama\\ollama.exe")) { throw "Bundled Ollama executable is missing." }
-          if (-not (Test-Path "build-assets\\ollama-models\\manifests")) { throw "Bundled Gemma model manifest is missing." }
+          if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
+          if (-not (Test-Path "build-assets\ollama\ollama.exe")) { throw "Bundled Ollama executable is missing." }
+          if (-not (Test-Path "build-assets\ollama-models\manifests")) { throw "Bundled Gemma model manifest is missing." }
+
+      - name: Prepare Gemma license acceptance and redistribution notices
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $licenseDir = Join-Path $PWD "licenses"
+          New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
+          $termsPath = Join-Path $licenseDir "GEMMA_TERMS_OF_USE.txt"
+          $policyPath = Join-Path $licenseDir "GEMMA_PROHIBITED_USE_POLICY.txt"
+          $agreementPath = Join-Path $licenseDir "GEMMA_INSTALLER_LICENSE.txt"
+          $noticePath = Join-Path $licenseDir "GEMMA-NOTICE.txt"
+
+          Invoke-WebRequest -Uri "https://gemma.ai/resources/terms.md.txt" -OutFile $termsPath
+          Invoke-WebRequest -Uri "https://gemma.ai/resources/prohibited-use.md.txt" -OutFile $policyPath
+          if ((Get-Item $termsPath).Length -lt 4000) { throw "The official Gemma Terms download looks incomplete." }
+          if ((Get-Item $policyPath).Length -lt 1000) { throw "The official Gemma Prohibited Use Policy download looks incomplete." }
+
+          $agreement = @"
+NEXAAI GEMMA MODEL INSTALLATION AGREEMENT
+
+NexaAI includes Google Gemma 3 1B model weights. By selecting "I accept the agreement" in this installer and continuing, you agree that your use, reproduction and distribution of Gemma is subject to the complete Gemma Terms of Use and the Gemma Prohibited Use Policy reproduced below. In particular, you must comply with all use restrictions in Section 3.2 of the Gemma Terms of Use. These model terms apply to Gemma only and do not replace the separate notices for other NexaAI components.
+
+==================== COMPLETE GEMMA TERMS OF USE ====================
+
+$(Get-Content -Path $termsPath -Raw)
+
+==================== GEMMA PROHIBITED USE POLICY ====================
+
+$(Get-Content -Path $policyPath -Raw)
+"@
+          Set-Content -Path $agreementPath -Value $agreement -Encoding utf8
+          Set-Content -Path $noticePath -Value "Gemma is provided under and subject to the Gemma Terms of Use found at gemma.ai/resources/terms" -Encoding utf8
+          Write-Host "Prepared official Gemma terms, prohibited-use policy, installer acceptance text and model notice."
 
       - name: Install Inno Setup
         shell: pwsh
@@ -150,13 +183,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $compiler = "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+          $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $compiler)) { throw "Inno Setup compiler not found." }
-          & $compiler "installer\\NexaAI.iss"
+          & $compiler "installer\NexaAI.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
           $installer = Get-ChildItem output -Filter "NexaAI-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) { throw "Nexa AI installer was not produced." }
-          Get-FileHash $installer.FullName -Algorithm SHA256 | Format-List | Out-File "output\\SHA256.txt"
+          Get-FileHash $installer.FullName -Algorithm SHA256 | Format-List | Out-File "output\SHA256.txt"
           Get-Item $installer.FullName | Select-Object Name,Length | Format-List
 
       - name: Upload installable software

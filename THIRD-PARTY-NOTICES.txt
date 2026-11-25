@@ -13,7 +13,12 @@ NexaAI is a Windows desktop application. The NexaAI installer includes the Ollam
    Model library: https://ollama.com/library/gemma3
    Model tag: gemma3:1b
    Approximate model download: 806 MB
-   Terms: https://ai.google.dev/gemma/terms
+   Terms: https://gemma.ai/resources/terms/
+   Prohibited Use Policy: https://gemma.ai/resources/prohibited-use/
+   The complete current terms, Prohibited Use Policy and required GEMMA-NOTICE.txt
+   are included in the installer and copied into the installed app's licenses folder.
+   The installer requires acceptance of the Gemma terms and use restrictions before
+   installing the bundled model.
    The model files are included in the NexaAI Windows installer and installed for the
    current Windows user. Gemma 3 1B is the sole chat and coding assistant model in this edition.
 

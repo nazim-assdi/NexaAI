@@ -22,6 +22,7 @@ SetupLogging=yes
 DiskSpanning=no
 VersionInfoVersion=2.0.0.0
 VersionInfoProductName=Nexa AI
+LicenseFile=..\licenses\GEMMA_INSTALLER_LICENSE.txt
 VersionInfoDescription=Bundled Ollama + Gemma 3 1B Offline Assistant
 
 [Languages]
@@ -31,6 +32,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "..\dist\NexaAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build-assets\ollama\*"; DestDir: "{app}\runtime\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build-assets\ollama-models\*"; DestDir: "{localappdata}\NexaAI\Engine\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall
+Source: "..\licenses\GEMMA_TERMS_OF_USE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\licenses\GEMMA_PROHIBITED_USE_POLICY.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\licenses\GEMMA_INSTALLER_LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\licenses\GEMMA-NOTICE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\nexa-ai.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 

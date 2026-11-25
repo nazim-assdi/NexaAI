@@ -9,7 +9,7 @@ NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help,
 3. Keep the installer open until setup completes, then launch NexaAI from the desktop shortcut.
 4. NexaAI starts its private local AI engine automatically. The chat model is already installed; no first-run model download is needed.
 
-The installer is larger than earlier versions because the AI model is included. Once installed, offline chat does not need an internet connection. No administrator permission is required; NexaAI installs for the current Windows user.
+The installer is larger than earlier versions because the AI model is included. It displays the Gemma Terms of Use and Prohibited Use Policy and requires acceptance before installation. Copies of both documents and Google's required Gemma notice are installed under the app's licenses folder. Once installed, offline chat does not need an internet connection. No administrator permission is required; NexaAI installs for the current Windows user.
 
 ## AI engine
 
@@ -27,7 +27,7 @@ Gemma 3 1B is deliberately compact to work more comfortably on older and low-mem
 ## Privacy
 
 - All chat prompts, chat history and supported text attachments stay on this PC.
-- NexaAI does not include cloud AI, FreeLM, provider API keys or a cloud mode.
+- NexaAI does not include cloud AI, FreeLM, provider API keys or a cloud mode. Use of the bundled Gemma model is subject to the model terms shown during setup.
 - The bundled Ollama service listens only on the local loopback interface.
 - Chat history, preferences, plugins and voice cache are stored under `%LOCALAPPDATA%\NexaAI`.
 - Existing chat history is retained during upgrades.
