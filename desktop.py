@@ -138,9 +138,9 @@ class NexaDesktop:
         self.pending_send_queue: list[str] = []
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
-        self.current_model_key = QWEN3_MODEL_KEY
+        self.current_model_key = OLLAMA_MODEL
         self.current_model_id = MODEL_ID
-        self.current_model_name = QWEN3_MODEL_NAME
+        self.current_model_name = OLLAMA_MODEL_NAME
         self.ollama_runtime = OllamaRuntime()
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
@@ -160,7 +160,7 @@ class NexaDesktop:
         self.whisper_model = None
         self._build_ui()
 
-        self.status_var.set("Preparing Qwen3 4B · checking local model…")
+        self.status_var.set("Preparing Gemma 3 1B · checking Ollama…")
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaBoot").start()
         self.root.after(100, self._poll_events)
 
@@ -363,7 +363,7 @@ class NexaDesktop:
         center.place(relx=0.5, rely=0.48, anchor="center")
         tk.Label(center, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 18), width=2, height=1).pack(pady=(0, 15))
         tk.Label(center, text="What can I help with?", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 22)).pack(pady=(0, 7))
-        tk.Label(center, text="Chat, code, debug or build an automation — all locally with Qwen3.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
+        tk.Label(center, text="Chat, code, debug or build an automation — all locally with Gemma 3 1B.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
         cards = tk.Frame(center, bg=self.BG)
         cards.pack()
         for index, (title, description, prompt) in enumerate(CHAT_SUGGESTIONS):
@@ -811,25 +811,33 @@ class NexaDesktop:
                     self.status_var.set("Offline engine failed to start")
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror("Nexa AI could not start", str(payload))
+                elif kind == "first_token":
+                    self.status_var.set("Writing answer…")
+                    self.status_label.configure(fg=self.ACCENT)
                 elif kind == "done":
                     self.busy = False
-                    self.send_button.configure(state="normal" if self.ready else "disabled")
+                    self.send_button.configure(state="normal" if self.ready else "disabled", text="↑")
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._finish_assistant_message()
                     self._scroll_chat_to_bottom()
+                    if self.pending_send_queue:
+                        self.status_var.set("Sending queued follow-up · " + str(len(self.pending_send_queue)) + " left")
+                        self.root.after(120, self._send_next_queued)
                     if self.voice_turn:
                         self.voice_turn = False
                         if self.speak_replies_var.get() and self.messages and self.messages[-1].get("role") == "assistant":
                             self._speak_text(str(self.messages[-1].get("content", "")))
                 elif kind == "request_error":
                     self.busy = False
-                    self.send_button.configure(state="normal" if self.ready else "disabled")
+                    self.send_button.configure(state="normal" if self.ready else "disabled", text="↑")
                     self.status_var.set("Request failed")
                     self.status_label.configure(fg="#ff8d8d")
                     self.voice_turn = False
                     self._remove_empty_assistant_row()
                     self._append_message("Nexa AI", f"I couldn't complete that request.\n\n{payload}", "assistant")
+                    if self.pending_send_queue:
+                        self.root.after(300, self._send_next_queued)
                 elif kind == "attached":
                     self.pending_files.append(payload)
                     self.uploading = False
@@ -907,17 +915,34 @@ class NexaDesktop:
         return "break"
 
     def send_message(self) -> None:
-        if not self.ready or self.busy or self.uploading:
+        if not self.ready or self.uploading:
             return
         text = "" if self.input_placeholder_active else self.input.get("1.0", "end-1c").strip()
         if not text and not self.pending_files:
             return
+
+        # Keep a follow-up instead of dropping it while the local model is responding.
+        if self.busy:
+            if self.pending_files:
+                self.status_var.set("Wait until the current answer finishes before attaching another file.")
+                return
+            if len(self.pending_send_queue) >= 4:
+                self.status_var.set("Message queue is full · maximum 4 follow-ups")
+                return
+            self.pending_send_queue.append(text)
+            self.input.delete("1.0", "end")
+            self.input_placeholder_active = False
+            self.input.configure(fg=self.TEXT)
+            self.send_button.configure(text="Queue " + str(len(self.pending_send_queue)), state="normal")
+            self.status_var.set(f"Follow-up queued · {len(self.pending_send_queue)} waiting")
+            return
+
         self.input.delete("1.0", "end")
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
         self.busy = True
-        self.send_button.configure(state="disabled")
-        self.status_var.set("Nexa AI is thinking locally…")
+        self.send_button.configure(state="normal", text="Queue")
+        self.status_var.set("Preparing local response…")
         self.status_label.configure(fg=self.ACCENT)
         attachments = list(self.pending_files)
         self.pending_files.clear()
@@ -936,6 +961,16 @@ class NexaDesktop:
         self._append_message("Nexa AI", "", "assistant")
         max_tokens = response_token_limit(self.response_profile_var.get())
         threading.Thread(target=self._stream_request, args=(max_tokens,), daemon=True, name="NexaResponse").start()
+
+    def _send_next_queued(self) -> None:
+        if not self.ready or self.busy or not self.pending_send_queue:
+            return
+        next_text = self.pending_send_queue.pop(0)
+        self.input.delete("1.0", "end")
+        self.input.insert("1.0", next_text)
+        self.input_placeholder_active = False
+        self.input.configure(fg=self.TEXT)
+        self.send_message()
 
     def _stream_request(self, max_tokens: int = 768) -> None:
         answer: list[str] = []
@@ -1433,12 +1468,8 @@ class NexaDesktop:
                 self.recording_stream.close()
             if self.api_server:
                 self.api_server.should_exit = True
-            if self.llama_process and self.llama_process.poll() is None:
-                self.llama_process.terminate()
-                try:
-                    self.llama_process.wait(timeout=8)
-                except subprocess.TimeoutExpired:
-                    self.llama_process.kill()
+            if self.ollama_runtime:
+                self.ollama_runtime.stop()
             self.log_handle.close()
         except Exception:
             pass
