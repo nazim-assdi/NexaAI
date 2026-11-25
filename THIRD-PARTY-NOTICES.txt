@@ -3,7 +3,7 @@ NexaAI is a Windows desktop application. The NexaAI installer includes the Ollam
 1. Ollama Windows standalone runtime
    Project: https://github.com/ollama/ollama
    Documentation: https://github.com/ollama/ollama/blob/main/docs/windows.mdx
-   Bundled release asset: ollama-windows-amd64-rocm.zip from Ollama v0.40.18
+   Bundled release asset: ollama-windows-amd64.zip from Ollama v0.11.10
    The Ollama runtime is embedded in the NexaAI installer under the application runtime folder.
    The upstream license is included as LICENSE alongside the bundled runtime.
    NexaAI starts Ollama as a local process and connects only to its app-specific loopback

@@ -821,7 +821,7 @@ class NexaDesktop:
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror(
                         "NexaAI engine missing",
-                        "The built-in Ollama runtime could not be found. Repair or reinstall NexaAI to restore the offline AI engine.\\n\\n"
+                        "The built-in Ollama runtime could not be found. Repair or reinstall NexaAI to restore the offline AI engine.\n\n"
                         + str(payload),
                     )
                 elif kind == "boot_error":
