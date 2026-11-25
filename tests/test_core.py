@@ -16,6 +16,7 @@ from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
 from tools.smoke_test_runtime import build_smoke_payload
 
 
@@ -89,6 +90,18 @@ class CoreTests(unittest.TestCase):
     def test_ui_layout_adapts_to_small_laptop_display(self):
         geometry = calculate_window_geometry(1024, 680)
         self.assertEqual(geometry, "944x560+40+60")
+
+    def test_chat_suggestions_cover_coding_and_automation(self):
+        self.assertEqual(len(CHAT_SUGGESTIONS), 4)
+        prompts = " ".join(item[2] for item in CHAT_SUGGESTIONS).lower()
+        self.assertIn("debug", prompts)
+        self.assertIn("n8n", prompts)
+        self.assertIn("python", prompts)
+
+    def test_recent_chat_label_is_compact_and_nonempty(self):
+        self.assertEqual(recent_chat_label("A short chat"), "A short chat")
+        self.assertEqual(len(recent_chat_label("A" * 80)), 30)
+        self.assertEqual(recent_chat_label("   "), "New conversation")
 
     def test_cpu_engine_profiles_have_low_memory_fallbacks(self):
         profiles = engine_profiles(cpu_count=4)

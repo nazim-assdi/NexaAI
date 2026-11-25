@@ -25,9 +25,11 @@ from nexa_ai.engine_config import build_engine_command, engine_profiles
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "1.5.2"
+APP_VERSION = "1.6.0"
 MODEL_ID = QWEN3_MODEL_ID
 LOCAL_MODEL_PORT = 11435
 API_PORT = 8000
@@ -88,6 +90,12 @@ class NexaDesktop:
     BORDER = "#3a4939"
 
     THEMES = {
+        "NTech Chat Dark": {
+            "BG": "#212121", "PANEL": "#171717", "PANEL_2": "#303030",
+            "TEXT": "#ececec", "MUTED": "#a1a1aa", "ACCENT": "#8ab4f8",
+            "BORDER": "#3b3b3b", "USER": "#ececec", "AI": "#ececec",
+            "SELECT": "#424242", "ACTIVE": "#3b3b3b", "BUTTON_TEXT": "#111827",
+        },
         "Eye Comfort Premium": {
             "BG": "#171a17", "PANEL": "#202720", "PANEL_2": "#2b352c",
             "TEXT": "#e5e8d8", "MUTED": "#a7b19f", "ACCENT": "#c4d6a1",
@@ -156,11 +164,7 @@ class NexaDesktop:
         self.voice_turn = False
         self.whisper_model = None
         self._build_ui()
-        self._append_message(
-            "Nexa AI",
-            "Welcome to NexaAI Chat Workspace. Your messages go to the local Qwen3 4B assistant. Click the message box at the bottom, type anything, then press Enter or Send Message. Ask for coding help, debugging, Bengali/English chat or n8n workflow design.",
-            "assistant",
-        )
+
         self.status_var.set("Preparing Qwen3 4B · checking local model…")
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaBoot").start()
         self.root.after(100, self._poll_events)
@@ -171,115 +175,88 @@ class NexaDesktop:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure(
-            "Nexa.TButton", font=("Segoe UI", 10), padding=(12, 8),
-            background=self.PANEL_2, foreground=self.TEXT, borderwidth=0,
-        )
-        style.map(
-            "Nexa.TButton",
-            background=[("active", self.THEMES[self.theme_name]["ACTIVE"]), ("disabled", self.PANEL)],
-            foreground=[("disabled", "#61708a")],
-        )
-        style.configure(
-            "Accent.TButton", font=("Segoe UI Semibold", 10), padding=(16, 9),
-            background=self.ACCENT, foreground=self.THEMES[self.theme_name]["BUTTON_TEXT"], borderwidth=0,
-        )
+        style.configure("Nexa.TButton", font=("Segoe UI", 9), padding=(10, 7), background=self.PANEL_2, foreground=self.TEXT, borderwidth=0)
+        style.map("Nexa.TButton", background=[("active", self.THEMES[self.theme_name]["ACTIVE"]), ("disabled", self.PANEL)], foreground=[("disabled", self.MUTED)])
+        style.configure("Accent.TButton", font=("Segoe UI Semibold", 9), padding=(12, 7), background=self.ACCENT, foreground=self.THEMES[self.theme_name]["BUTTON_TEXT"], borderwidth=0)
         style.map("Accent.TButton", background=[("active", self.THEMES[self.theme_name]["ACTIVE"]), ("disabled", self.PANEL_2)])
 
+        self.current_assistant_widget = None
+        self.current_assistant_row = None
         shell = tk.Frame(self.root, bg=self.BG)
         shell.pack(fill="both", expand=True)
 
-        sidebar = tk.Frame(shell, bg=self.PANEL, width=235)
+        sidebar = tk.Frame(shell, bg=self.PANEL, width=258)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
         brand = tk.Frame(sidebar, bg=self.PANEL)
-        brand.pack(fill="x", padx=20, pady=(24, 22))
-        tk.Label(
-            brand, text="N", bg=self.ACCENT, fg="#071226",
-            font=("Segoe UI Semibold", 18), width=2, height=1,
-        ).pack(side="left", padx=(0, 10))
-        labels = tk.Frame(brand, bg=self.PANEL)
-        labels.pack(side="left")
-        tk.Label(labels, text="NEXA AI", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 15)).pack(anchor="w")
-        tk.Label(labels, text="PRIVATE · OFFLINE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
-        tk.Label(labels, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.ACCENT, font=("Segoe UI Semibold", 7)).pack(anchor="w", pady=(3, 0))
+        brand.pack(fill="x", padx=17, pady=(18, 18))
+        tk.Label(brand, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 17), width=2, height=1).pack(side="left", padx=(0, 10))
+        brand_copy = tk.Frame(brand, bg=self.PANEL)
+        brand_copy.pack(side="left", fill="x", expand=True)
+        tk.Label(brand_copy, text="Nexa AI", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(anchor="w")
+        tk.Label(brand_copy, text="PRIVATE · OFFLINE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(1, 0))
 
-        ttk.Button(
-            sidebar, text="💬   Chat Workspace", style="Accent.TButton",
-            command=self.show_chat_workspace,
-        ).pack(fill="x", padx=14, pady=(0, 8))
-        ttk.Button(
-            sidebar, text="＋   New conversation", style="Nexa.TButton",
-            command=self.new_conversation,
-        ).pack(fill="x", padx=14, pady=(0, 8))
-        ttk.Button(
-            sidebar, text="◷   Chat History", style="Nexa.TButton",
-            command=self.open_history,
-        ).pack(fill="x", padx=14, pady=(0, 8))
-        ttk.Button(
-            sidebar, text="⚙   n8n Workflow Studio", style="Nexa.TButton",
-            command=self.open_n8n_studio,
-        ).pack(fill="x", padx=14, pady=(0, 10))
-        ttk.Button(
-            sidebar, text="▦   Plugin Manager", style="Nexa.TButton",
-            command=self.open_plugin_manager,
-        ).pack(fill="x", padx=14, pady=(4, 14))
-        tk.Label(sidebar, text="WORKSPACE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=20, pady=(4, 10))
-        tk.Label(sidebar, text="Local assistant", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=5)
-        tk.Label(sidebar, text="Chat & writing", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=3)
-        tk.Label(sidebar, text="Documents & local tools", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=3)
-        tk.Frame(sidebar, bg=self.PANEL).pack(fill="both", expand=True)
-        tk.Frame(sidebar, bg=self.BORDER, height=1).pack(fill="x", padx=16, pady=(0, 12))
-        tk.Label(sidebar, text="ACTIVE MODEL", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=20)
-        self.model_name_var = tk.StringVar(value=self.current_model_name)
-        tk.Label(sidebar, textvariable=self.model_name_var, bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 10), wraplength=190, justify="left").pack(anchor="w", padx=20, pady=(5, 3))
-        tk.Label(sidebar, text="Runs locally on this PC", bg=self.PANEL, fg="#8fbd92", font=("Segoe UI", 9)).pack(anchor="w", padx=20, pady=(0, 18))
+        self._sidebar_button(sidebar, "＋   New chat", self.new_conversation, accent=True).pack(fill="x", padx=11, pady=(0, 7))
+        self._sidebar_button(sidebar, "⌕   Search conversations", self.open_history).pack(fill="x", padx=11, pady=(0, 7))
+        self._sidebar_button(sidebar, "⚙   n8n Workflow Studio", self.open_n8n_studio).pack(fill="x", padx=11, pady=(0, 4))
+        self._sidebar_button(sidebar, "▦   Plugin Manager", self.open_plugin_manager).pack(fill="x", padx=11, pady=(0, 14))
+
+        tk.Label(sidebar, text="RECENT", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=18, pady=(2, 8))
+        self.recent_chats_frame = tk.Frame(sidebar, bg=self.PANEL)
+        self.recent_chats_frame.pack(fill="both", expand=True, padx=8)
+        self._refresh_recent_conversations()
+
+        bottom = tk.Frame(sidebar, bg=self.PANEL)
+        bottom.pack(fill="x", side="bottom", padx=12, pady=13)
+        tk.Frame(bottom, bg=self.BORDER, height=1).pack(fill="x", pady=(0, 12))
+        model_card = tk.Frame(bottom, bg=self.PANEL_2, padx=10, pady=9)
+        model_card.pack(fill="x")
+        tk.Label(model_card, text="●  Qwen3 4B", bg=self.PANEL_2, fg="#80cfa0", font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        tk.Label(model_card, text="Local assistant · NTech", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
+        tk.Label(bottom, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(9, 0))
 
         main = tk.Frame(shell, bg=self.BG)
         main.pack(side="left", fill="both", expand=True)
-        top = tk.Frame(main, bg=self.PANEL, height=66)
+        top = tk.Frame(main, bg=self.BG, height=58)
         top.pack(fill="x")
         top.pack_propagate(False)
-        tk.Label(top, text="Chat Workspace", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(side="left", padx=22)
-        tk.Label(top, text="QWEN3 4B  ·  NTECH", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=5).pack(side="left")
-        self.status_var = tk.StringVar(value="Starting…")
-        self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 9))
-        self.status_label.pack(side="right", padx=(10, 22))
+        tk.Label(top, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 13)).pack(side="left", padx=(24, 10))
+        tk.Label(top, text="Qwen3 4B", bg=self.PANEL_2, fg=self.TEXT, font=("Segoe UI", 8), padx=9, pady=5).pack(side="left")
+        self.status_var = tk.StringVar(value="Starting local engine…")
+        self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
+        self.status_label.pack(side="right", padx=(8, 17))
         self.theme_var = tk.StringVar(value=self.theme_name)
-        self.theme_selector = ttk.Combobox(
-            top, textvariable=self.theme_var, values=list(self.THEMES.keys()),
-            state="readonly", width=20, font=("Segoe UI", 9),
-        )
-        self.theme_selector.pack(side="right", padx=8)
+        self.theme_selector = ttk.Combobox(top, textvariable=self.theme_var, values=list(self.THEMES.keys()), state="readonly", width=17, font=("Segoe UI", 8))
+        self.theme_selector.pack(side="right", padx=7)
         self.theme_selector.bind("<<ComboboxSelected>>", self._change_theme)
         self.ttk_style = style
 
-        self.chat = ScrolledText(
-            main, wrap="word", bg=self.BG, fg=self.TEXT, insertbackground=self.TEXT,
-            selectbackground=self.THEMES[self.theme_name]["SELECT"], relief="flat", borderwidth=0,
-            font=("Segoe UI", 10), padx=26, pady=22, spacing1=2, spacing3=8,
-            state="disabled",
-        )
-        self.chat.pack(fill="both", expand=True)
-        self.chat.tag_configure("name_user", foreground=self.THEMES[self.theme_name]["USER"], font=("Segoe UI Semibold", 10))
-        self.chat.tag_configure("name_ai", foreground=self.THEMES[self.theme_name]["AI"], font=("Segoe UI Semibold", 10))
-        self.chat.tag_configure("body", foreground=self.TEXT, font=("Segoe UI", 10), lmargin1=12, lmargin2=12, spacing1=4, spacing3=14)
-        self.chat.tag_configure("meta", foreground=self.MUTED, font=("Segoe UI", 8), lmargin1=12, spacing3=14)
+        chat_stage = tk.Frame(main, bg=self.BG)
+        chat_stage.pack(fill="both", expand=True)
+        self.chat_canvas = tk.Canvas(chat_stage, bg=self.BG, highlightthickness=0, borderwidth=0, yscrollincrement=28)
+        chat_scroll = ttk.Scrollbar(chat_stage, orient="vertical", command=self.chat_canvas.yview)
+        self.chat_canvas.configure(yscrollcommand=chat_scroll.set)
+        chat_scroll.pack(side="right", fill="y")
+        self.chat_canvas.pack(side="left", fill="both", expand=True)
+        self.chat_feed = tk.Frame(self.chat_canvas, bg=self.BG)
+        self.chat_window_id = self.chat_canvas.create_window((0, 0), window=self.chat_feed, anchor="nw")
+        self.chat_feed.bind("<Configure>", self._on_chat_feed_configure)
+        self.chat_canvas.bind("<Configure>", self._on_chat_canvas_configure)
+        self.chat_canvas.bind("<MouseWheel>", self._on_chat_mousewheel)
+        self.chat_feed.bind("<MouseWheel>", self._on_chat_mousewheel)
+        self._show_empty_state()
 
         footer = tk.Frame(main, bg=self.BG)
-        footer.pack(fill="x", padx=20, pady=(8, 12))
-        tk.Label(footer, text="MESSAGE NEXA AI", bg=self.BG, fg=self.MUTED, font=("Segoe UI Semibold", 8), anchor="w").pack(fill="x", pady=(0, 5))
+        footer.pack(fill="x", padx=20, pady=(5, 7))
         self.attachments_label = tk.Label(footer, text="", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), anchor="w")
-        self.attachments_label.pack(fill="x", pady=(0, 5))
-        composer = tk.Frame(footer, bg=self.PANEL, highlightbackground=self.ACCENT, highlightthickness=1)
+        self.attachments_label.pack(fill="x", padx=30, pady=(0, 5))
+        composer_outer = tk.Frame(footer, bg=self.BORDER, highlightbackground=self.BORDER, highlightthickness=1, padx=1, pady=1)
+        composer_outer.pack(fill="x", padx=30)
+        composer = tk.Frame(composer_outer, bg=self.PANEL_2)
         composer.pack(fill="x")
-        self.input = tk.Text(
-            composer, height=3, wrap="word", bg=self.PANEL, fg=self.TEXT,
-            insertbackground=self.TEXT, relief="flat", borderwidth=0,
-            font=("Segoe UI", 10), padx=12, pady=10, undo=True,
-        )
-        self.input.pack(side="left", fill="both", expand=True)
-        self.input_placeholder = "Type your message here…  (Enter to send · Shift+Enter for a new line)"
+        self.input = tk.Text(composer, height=2, wrap="word", bg=self.PANEL_2, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 10), padx=14, pady=12, undo=True)
+        self.input.pack(fill="x", padx=2, pady=(2, 0))
+        self.input_placeholder = "Message Nexa AI…"
         self.input_placeholder_active = True
         self.input.insert("1.0", self.input_placeholder)
         self.input.configure(fg=self.MUTED)
@@ -287,27 +264,123 @@ class NexaDesktop:
         self.input.bind("<FocusOut>", self._restore_input_placeholder)
         self.input.bind("<Return>", self._send_enter)
         self.input.bind("<Control-Return>", self._send_hotkey)
-        actions = tk.Frame(composer, bg=self.PANEL)
-        actions.pack(side="right", fill="y", padx=8, pady=8)
-        self.voice_button = ttk.Button(actions, text="🎙 Voice chat", style="Nexa.TButton", command=self.toggle_voice_chat)
-        self.voice_button.pack(fill="x", pady=(0, 6))
-        ttk.Button(actions, text="Attach file", style="Nexa.TButton", command=self.attach_file).pack(fill="x", pady=(0, 6))
-        self.send_button = ttk.Button(actions, text="Send Message  ↑", style="Accent.TButton", command=self.send_message, state="disabled")
-        self.send_button.pack(fill="x")
+
+        composer_tools = tk.Frame(composer, bg=self.PANEL_2)
+        composer_tools.pack(fill="x", padx=9, pady=(0, 8))
+        left_tools = tk.Frame(composer_tools, bg=self.PANEL_2)
+        left_tools.pack(side="left")
+        self.attach_button = tk.Button(left_tools, text="＋  Attach", command=self.attach_file, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=9, pady=5, cursor="hand2")
+        self.attach_button.pack(side="left", padx=(0, 4))
+        self.voice_button = tk.Button(left_tools, text="🎙 Voice", command=self.toggle_voice_chat, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=9, pady=5, cursor="hand2")
+        self.voice_button.pack(side="left")
+        self.send_button = tk.Button(composer_tools, text="↑", command=self.send_message, bg=self.ACCENT, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"], activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI Semibold", 14), width=3, height=1, state="disabled", cursor="hand2")
+        self.send_button.pack(side="right", padx=(6, 0))
+
+        footer_note = tk.Frame(footer, bg=self.BG)
+        footer_note.pack(fill="x", padx=32, pady=(6, 0))
         self.speak_replies_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(footer, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(anchor="e", pady=(5, 0))
-        tk.Label(
-            footer,
-            text="LOCAL & PRIVATE  ·  DEVELOPED BY NTECH",
-            bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8),
-        ).pack(anchor="center", pady=(5, 0))
+        ttk.Checkbutton(footer_note, text="Speak voice-chat replies", variable=self.speak_replies_var).pack(side="left")
+        tk.Label(footer_note, text="Your chats stay on this PC · NTech", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
+
+    def _sidebar_button(self, parent, label: str, command, accent: bool = False):
+        return tk.Button(parent, text=label, command=command, anchor="w", bg=self.PANEL_2 if accent else self.PANEL, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"] if accent else self.TEXT, activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, relief="flat", borderwidth=0, padx=13, pady=10, font=("Segoe UI Semibold" if accent else "Segoe UI", 9), cursor="hand2")
+
+    def _refresh_recent_conversations(self) -> None:
+        frame = getattr(self, "recent_chats_frame", None)
+        if frame is None or not frame.winfo_exists():
+            return
+        for child in frame.winfo_children():
+            child.destroy()
+        try:
+            items = self.history_store.list_conversations()[:12]
+        except Exception:
+            items = []
+        if not items:
+            tk.Label(frame, text="Your conversations\nwill appear here.", bg=self.PANEL, fg=self.MUTED, justify="left", font=("Segoe UI", 8)).pack(anchor="w", padx=10, pady=8)
+            return
+        for item in items:
+            title = recent_chat_label(item.get("title", ""))
+            tk.Button(frame, text=title, anchor="w", command=lambda cid=item["id"]: self._open_saved_conversation(cid), bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL_2, activeforeground=self.TEXT, relief="flat", borderwidth=0, padx=10, pady=8, font=("Segoe UI", 8), cursor="hand2").pack(fill="x", pady=1)
+
+    def _open_saved_conversation(self, conversation_id: str) -> None:
+        try:
+            data = self.history_store.load(conversation_id)
+            self.messages = data["messages"]
+            self.conversation_id = data["id"]
+            self.conversation_title = data.get("title", "Conversation")
+            self._render_conversation(self.messages)
+            self.pending_files.clear()
+            self._refresh_attachments()
+            self.show_chat_workspace()
+            self._refresh_recent_conversations()
+        except Exception as exc:
+            messagebox.showerror("History could not be opened", str(exc))
+
+    def _on_chat_feed_configure(self, _event=None) -> None:
+        try:
+            self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+        except tk.TclError:
+            pass
+
+    def _on_chat_canvas_configure(self, event) -> None:
+        try:
+            self.chat_canvas.itemconfigure(self.chat_window_id, width=event.width)
+            height = max(event.height, self.chat_feed.winfo_reqheight())
+            self.chat_canvas.itemconfigure(self.chat_window_id, height=height)
+        except tk.TclError:
+            pass
+
+    def _on_chat_mousewheel(self, event):
+        self.chat_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        return "break"
+
+    def _scroll_chat_to_bottom(self) -> None:
+        try:
+            self.root.update_idletasks()
+            self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+            self.chat_canvas.yview_moveto(1.0)
+        except tk.TclError:
+            pass
+
+    def _clear_chat_feed(self) -> None:
+        for child in self.chat_feed.winfo_children():
+            child.destroy()
+        self.current_assistant_widget = None
+        self.current_assistant_row = None
+        self.empty_state = None
+
+    def _show_empty_state(self) -> None:
+        self._clear_chat_feed()
+        empty = tk.Frame(self.chat_feed, bg=self.BG)
+        empty.pack(fill="both", expand=True)
+        self.empty_state = empty
+        center = tk.Frame(empty, bg=self.BG)
+        center.place(relx=0.5, rely=0.48, anchor="center")
+        tk.Label(center, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 18), width=2, height=1).pack(pady=(0, 15))
+        tk.Label(center, text="What can I help with?", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 22)).pack(pady=(0, 7))
+        tk.Label(center, text="Chat, code, debug or build an automation — all locally with Qwen3.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
+        cards = tk.Frame(center, bg=self.BG)
+        cards.pack()
+        for index, (title, description, prompt) in enumerate(CHAT_SUGGESTIONS):
+            card = tk.Frame(cards, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+            card.grid(row=index // 2, column=index % 2, padx=6, pady=6, sticky="nsew")
+            tk.Button(card, text=f"{title}\n{description}", anchor="w", justify="left", command=lambda value=prompt: self._fill_prompt_suggestion(value), bg=self.PANEL, fg=self.TEXT, activebackground=self.PANEL_2, activeforeground=self.TEXT, relief="flat", borderwidth=0, padx=14, pady=14, width=28, wraplength=225, font=("Segoe UI", 9), cursor="hand2").pack(fill="both", expand=True)
+        cards.grid_columnconfigure(0, weight=1)
+        cards.grid_columnconfigure(1, weight=1)
+        self.root.after_idle(self._on_chat_feed_configure)
+
+    def _fill_prompt_suggestion(self, prompt: str) -> None:
+        self.input.delete("1.0", "end")
+        self.input_placeholder_active = False
+        self.input.configure(fg=self.TEXT)
+        self.input.insert("1.0", prompt)
+        self.input.focus_set()
 
     def show_chat_workspace(self) -> None:
-        """Bring the chat composer into view and focus it for typing."""
         try:
             self.root.deiconify()
             self.root.lift()
-            self.chat.see("end")
+            self._scroll_chat_to_bottom()
             self.input.focus_set()
             if self.input_placeholder_active:
                 self._clear_input_placeholder()
@@ -327,7 +400,6 @@ class NexaDesktop:
             self.input_placeholder_active = True
 
     def _send_enter(self, event=None):
-        # Shift+Enter keeps the normal Text widget newline behaviour.
         if event is not None and (event.state & 0x0001):
             return None
         self.send_message()
@@ -336,10 +408,10 @@ class NexaDesktop:
     def _load_theme_preference(self) -> str:
         try:
             prefs = json.loads(self.preferences_path.read_text(encoding="utf-8"))
-            selected = str(prefs.get("theme", "Eye Comfort Premium"))
-            return selected if selected in self.THEMES else "Eye Comfort Premium"
+            selected = str(prefs.get("theme", "NTech Chat Dark"))
+            return selected if selected in self.THEMES else "NTech Chat Dark"
         except (OSError, ValueError, AttributeError):
-            return "Eye Comfort Premium"
+            return "NTech Chat Dark"
 
     def _set_palette(self, theme_name: str) -> None:
         palette = self.THEMES.get(theme_name, self.THEMES["Eye Comfort Premium"])
@@ -373,11 +445,7 @@ class NexaDesktop:
         self.ttk_style.configure("Accent.TButton", background=self.ACCENT, foreground=new_palette["BUTTON_TEXT"])
         self.ttk_style.map("Accent.TButton", background=[("active", new_palette["ACTIVE"]), ("disabled", self.PANEL_2)])
         self.ttk_style.configure("TCombobox", fieldbackground=self.PANEL_2, background=self.PANEL_2, foreground=self.TEXT)
-        self.chat.tag_configure("name_user", foreground=new_palette["USER"])
-        self.chat.tag_configure("name_ai", foreground=new_palette["AI"])
-        self.chat.tag_configure("body", foreground=self.TEXT)
-        self.chat.tag_configure("meta", foreground=self.MUTED)
-        self.chat.configure(selectbackground=new_palette["SELECT"])
+        self.chat_canvas.configure(bg=self.BG)
         self.theme_name = selected
         self._save_preferences()
 
@@ -492,19 +560,80 @@ class NexaDesktop:
         except Exception as exc:
             messagebox.showerror("Plugin import failed", str(exc))
 
+    def _make_message_text(self, parent, text: str, background: str, foreground: str, width: int, padx: int, pady: int):
+        widget = tk.Text(parent, wrap="word", bg=background, fg=foreground, insertbackground=foreground, relief="flat", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10), width=width, height=1, padx=padx, pady=pady, spacing1=3, spacing3=4, undo=False)
+        if text:
+            widget.insert("1.0", text)
+        widget.configure(state="disabled")
+        widget.pack(fill="x", expand=True)
+        widget.update_idletasks()
+        try:
+            display_lines = widget.count("1.0", "end-1c", "displaylines")
+            line_count = max(1, int(display_lines[0])) if display_lines else 1
+        except (IndexError, TypeError, tk.TclError):
+            line_count = max(1, text.count("\n") + 1)
+        widget.configure(height=min(120, line_count))
+        widget.bind("<MouseWheel>", self._on_chat_mousewheel)
+        return widget
+
     def _append_message(self, name: str, text: str, role: str) -> None:
-        self.chat.configure(state="normal")
-        tag = "name_user" if role == "user" else "name_ai"
-        self.chat.insert("end", f"{name}\n", tag)
-        self.chat.insert("end", f"{text}\n\n", "body")
-        self.chat.configure(state="disabled")
-        self.chat.see("end")
+        if self.empty_state is not None and self.empty_state.winfo_exists():
+            self.empty_state.destroy()
+            self.empty_state = None
+        row = tk.Frame(self.chat_feed, bg=self.BG)
+        row.pack(fill="x", padx=22 if role == "assistant" else 18, pady=(15, 11))
+        canvas_width = max(560, self.chat_canvas.winfo_width())
+        text_width = max(44, min(90, int((canvas_width - 290) / 8)))
+        if role == "user":
+            bubble = tk.Frame(row, bg=self.PANEL_2, highlightbackground=self.BORDER, highlightthickness=1, padx=1, pady=1)
+            bubble.pack(anchor="e", padx=(70, 0))
+            self._make_message_text(bubble, text, self.PANEL_2, self.TEXT, min(72, text_width), 13, 9)
+            self.current_assistant_widget = None
+            self.current_assistant_row = None
+        else:
+            header = tk.Frame(row, bg=self.BG)
+            header.pack(fill="x", pady=(0, 5))
+            tk.Label(header, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 9), width=2, height=1).pack(side="left", padx=(0, 9))
+            tk.Label(header, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(side="left")
+            body = tk.Frame(row, bg=self.BG)
+            body.pack(fill="x", padx=(31, 0))
+            message_widget = self._make_message_text(body, text, self.BG, self.TEXT, text_width, 1, 2)
+            if not text:
+                self.current_assistant_widget = message_widget
+                self.current_assistant_row = row
+            else:
+                self.current_assistant_widget = None
+                self.current_assistant_row = None
+        self._scroll_chat_to_bottom()
 
     def _append_stream(self, text: str) -> None:
-        self.chat.configure(state="normal")
-        self.chat.insert("end", text, "body")
-        self.chat.configure(state="disabled")
-        self.chat.see("end")
+        widget = self.current_assistant_widget
+        if widget is None or not widget.winfo_exists():
+            return
+        try:
+            widget.configure(state="normal")
+            widget.insert("end", text)
+            widget.update_idletasks()
+            display_lines = widget.count("1.0", "end-1c", "displaylines")
+            line_count = max(1, int(display_lines[0])) if display_lines else 1
+            widget.configure(height=min(120, line_count), state="disabled")
+            self._scroll_chat_to_bottom()
+        except tk.TclError:
+            self.current_assistant_widget = None
+
+    def _remove_empty_assistant_row(self) -> None:
+        widget = self.current_assistant_widget
+        row = self.current_assistant_row
+        if widget is not None and row is not None:
+            try:
+                if not widget.get("1.0", "end-1c").strip():
+                    row.destroy()
+            except tk.TclError:
+                pass
+        self.current_assistant_widget = None
+        self.current_assistant_row = None
+
+
 
     def _boot_engine(self) -> None:
         try:
@@ -705,11 +834,8 @@ class NexaDesktop:
                     self.status_label.configure(fg="#73d6a4")
                     self.send_button.configure(state="normal")
                     self.root.after(80, self.show_chat_workspace)
-                    self._append_message(
-                        "Nexa AI",
-                        "Qwen3 4B is ready and running locally. This is the only assistant model used for chat, coding, reasoning and n8n workflow design. You can now disconnect from the internet.",
-                        "assistant",
-                    )
+                elif kind == "history_updated":
+                    self._refresh_recent_conversations()
                 elif kind == "model_download_status":
                     self.status_var.set(str(payload))
                     self.status_label.configure(fg=self.ACCENT)
@@ -737,10 +863,9 @@ class NexaDesktop:
                     self.send_button.configure(state="normal" if self.ready else "disabled")
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
-                    self.chat.configure(state="normal")
-                    self.chat.insert("end", "\n\n", "body")
-                    self.chat.configure(state="disabled")
-                    self.chat.see("end")
+                    self.current_assistant_widget = None
+                    self.current_assistant_row = None
+                    self._scroll_chat_to_bottom()
                     if self.voice_turn:
                         self.voice_turn = False
                         if self.speak_replies_var.get() and self.messages and self.messages[-1].get("role") == "assistant":
@@ -751,6 +876,7 @@ class NexaDesktop:
                     self.status_var.set("Request failed")
                     self.status_label.configure(fg="#ff8d8d")
                     self.voice_turn = False
+                    self._remove_empty_assistant_row()
                     self._append_message("Nexa AI", f"I couldn't complete that request.\n\n{payload}", "assistant")
                 elif kind == "attached":
                     self.pending_files.append(payload)
@@ -910,6 +1036,7 @@ class NexaDesktop:
                 self.messages,
                 self.current_model_id,
             )
+            self.events.put(("history_updated", None))
         except (OSError, ValueError, TypeError):
             pass
 
@@ -930,16 +1057,18 @@ class NexaDesktop:
         return str(content or "")
 
     def _render_conversation(self, messages: list[dict[str, Any]]) -> None:
-        self.chat.configure(state="normal")
-        self.chat.delete("1.0", "end")
-        self.chat.configure(state="disabled")
+        self._clear_chat_feed()
+        rendered = False
         for message in messages:
             role = message.get("role")
             if role not in {"user", "assistant"}:
                 continue
             label = "You" if role == "user" else "Nexa AI"
             self._append_message(label, self._history_message_text(message.get("content", "")), role)
-        self.chat.see("end")
+            rendered = True
+        if not rendered:
+            self._show_empty_state()
+        self._scroll_chat_to_bottom()
 
     def open_history(self) -> None:
         window = tk.Toplevel(self.root)
@@ -983,13 +1112,7 @@ class NexaDesktop:
             if not item:
                 return
             try:
-                data = self.history_store.load(item["id"])
-                self.messages = data["messages"]
-                self.conversation_id = data["id"]
-                self.conversation_title = data.get("title", "Conversation")
-                self._render_conversation(self.messages)
-                self.pending_files.clear()
-                self._refresh_attachments()
+                self._open_saved_conversation(item["id"])
                 window.destroy()
             except Exception as exc:
                 messagebox.showerror("History could not be opened", str(exc), parent=window)
@@ -1004,6 +1127,7 @@ class NexaDesktop:
                 self.history_store.delete(item["id"])
                 listing.delete(listing.curselection()[0])
                 items.remove(item)
+                self._refresh_recent_conversations()
                 if not items:
                     listing.configure(state="normal")
                     listing.insert("end", "No saved conversations yet.")
@@ -1023,12 +1147,10 @@ class NexaDesktop:
         self.conversation_id = uuid4().hex
         self.conversation_title = "New conversation"
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        self.chat.configure(state="normal")
-        self.chat.delete("1.0", "end")
-        self.chat.configure(state="disabled")
+        self._show_empty_state()
         self.pending_files.clear()
         self._refresh_attachments()
-        self._append_message("Nexa AI", "New conversation started. What would you like to work on?", "assistant")
+        self.show_chat_workspace()
 
     def toggle_voice_chat(self) -> None:
         if not self.ready or self.busy or self.uploading:
