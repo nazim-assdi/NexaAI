@@ -1,6 +1,6 @@
 # NexaAI 2.0.0 — NTech Edition · Bundled Gemma Offline
 
-NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. The single setup installer includes both the Ollama runtime and Google Gemma 3 1B model. There is no separate Ollama installation, cloud provider or API key system.
+NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. The single setup installer includes the Ollama runtime. On first launch, NexaAI automatically downloads Google Gemma 3 1B and prepares the local model. There is no separate Ollama installation, cloud provider or API key system.
 
 ## Install
 
@@ -9,14 +9,14 @@ NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help,
 3. Keep the installer open until setup completes, then launch NexaAI from the desktop shortcut.
 4. NexaAI starts its private local AI engine automatically. The chat model is already installed; no first-run model download is needed.
 
-The installer is larger than earlier versions because the AI model is included. It displays the Gemma Terms of Use and Prohibited Use Policy and requires acceptance before installation. Copies of both documents and Google's required Gemma notice are installed under the app's licenses folder. Once installed, offline chat does not need an internet connection. No administrator permission is required; NexaAI installs for the current Windows user.
+The installer is larger than earlier versions because the AI model is included. It displays the Gemma Terms of Use and Prohibited Use Policy and requires acceptance before installation. Copies of both documents and Google's required Gemma notice are installed under the app's licenses folder. Once the first model download completes, offline chat does not need an internet connection. No administrator permission is required; NexaAI installs for the current Windows user.
 
 ## AI engine
 
 **Google Gemma 3 1B — Ollama tag: `gemma3:1b`**
 
-- Approximate model download: 806 MB (included in the installer)
-- Ollama Windows runtime is bundled inside NexaAI
+- Approximate model download: 806 MB (downloaded automatically on first launch)
+- Ollama Windows standalone runtime is bundled inside NexaAI
 - Model files are installed under `%LOCALAPPDATA%\NexaAI\Engine\models`
 - NexaAI starts the private Ollama service at `127.0.0.1:11439`; it does not need the standard Ollama port
 - CPU-friendly settings with a 4K context window and small thread count

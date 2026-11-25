@@ -19,8 +19,10 @@ NexaAI is a Windows desktop application. The NexaAI installer includes the Ollam
    are included in the installer and copied into the installed app's licenses folder.
    The installer requires acceptance of the Gemma terms and use restrictions before
    installing the bundled model.
-   The model files are included in the NexaAI Windows installer and installed for the
-   current Windows user. Gemma 3 1B is the sole chat and coding assistant model in this edition.
+   Gemma 3 1B is downloaded automatically through the bundled Ollama runtime on first
+   launch, after the user accepts the terms in the NexaAI installer. The model is stored
+   under the current Windows user's NexaAI engine folder. It is the sole chat and coding
+   assistant model in this edition.
 
 3. Python dependencies
    FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,

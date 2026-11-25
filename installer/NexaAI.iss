@@ -31,7 +31,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "..\dist\NexaAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build-assets\ollama\*"; DestDir: "{app}\runtime\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\build-assets\ollama-models\*"; DestDir: "{localappdata}\NexaAI\Engine\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall
 Source: "..\licenses\GEMMA_TERMS_OF_USE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\licenses\GEMMA_PROHIBITED_USE_POLICY.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\licenses\GEMMA_INSTALLER_LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion

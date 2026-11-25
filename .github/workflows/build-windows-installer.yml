@@ -52,62 +52,29 @@ jobs:
           python -m compileall -q nexa_ai desktop.py tools/build_icon.py tools/smoke_test_runtime.py
           python -m unittest discover -s tests -v
 
-      - name: Download embedded Ollama runtime and Gemma 3 1B
+      - name: Download and verify embedded Ollama standalone CLI
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $buildAssets = Join-Path $PWD "build-assets"
           $ollamaDir = Join-Path $buildAssets "ollama"
-          $modelDir = Join-Path $buildAssets "ollama-models"
-          New-Item -ItemType Directory -Force -Path $ollamaDir, $modelDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $ollamaDir | Out-Null
 
-          $zipPath = Join-Path $env:TEMP "ollama-windows-amd64-rocm.zip"
-          $url = "https://github.com/ollama/ollama/releases/download/v0.40.18/ollama-windows-amd64-rocm.zip"
+          $zipPath = Join-Path $env:TEMP "ollama-windows-amd64.zip"
+          $url = "https://github.com/ollama/ollama/releases/download/v0.11.10/ollama-windows-amd64.zip"
           Invoke-WebRequest -Uri $url -OutFile $zipPath
-          $expectedHash = "ff309b427e81f6364178a6b5ba6a50697b7ee7e81f5f8c4f801752f4fdb060b6"
+          $expectedHash = "e87a70728ce6298a48f8f19366508e8bd168d904c736c2a11620229d445e1846"
           $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualHash -ne $expectedHash) { throw "Ollama runtime checksum mismatch: $actualHash" }
 
           Expand-Archive -Path $zipPath -DestinationPath $ollamaDir -Force
-          $ollamaExe = Get-ChildItem -Path $ollamaDir -Filter "ollama.exe" -Recurse | Select-Object -First 1
-          if (-not $ollamaExe) { throw "The official Ollama runtime archive did not contain ollama.exe." }
-          if ($ollamaExe.DirectoryName -ne $ollamaDir) { throw "Unexpected Ollama archive layout: ollama.exe was not at the runtime root." }
+          $ollamaExe = Join-Path $ollamaDir "ollama.exe"
+          if (-not (Test-Path $ollamaExe)) { throw "The official Ollama standalone package did not contain ollama.exe at its root." }
+          & $ollamaExe --version
+          if ($LASTEXITCODE -ne 0) { throw "The bundled Ollama CLI failed its version check." }
 
-          $licenseUrl = "https://raw.githubusercontent.com/ollama/ollama/v0.40.18/LICENSE"
-          try { Invoke-WebRequest -Uri $licenseUrl -OutFile (Join-Path $ollamaDir "LICENSE") } catch {
-            Write-Warning "Ollama archive license file was retained as provided by upstream."
-          }
-
-          $env:OLLAMA_MODELS = $modelDir
-          $env:OLLAMA_HOST = "127.0.0.1:11439"
-          $env:OLLAMA_KEEP_ALIVE = "30m"
-          $server = Start-Process -FilePath $ollamaExe.FullName -ArgumentList "serve" -WorkingDirectory $ollamaDir -PassThru -WindowStyle Hidden
-          try {
-            $deadline = (Get-Date).AddMinutes(2)
-            $ready = $false
-            while ((Get-Date) -lt $deadline) {
-              try {
-                Invoke-RestMethod -Uri "http://127.0.0.1:11439/api/version" -TimeoutSec 3 | Out-Null
-                $ready = $true
-                break
-              } catch { Start-Sleep -Seconds 2 }
-              if ($server.HasExited) { throw "Bundled Ollama server exited with code $($server.ExitCode)." }
-            }
-            if (-not $ready) { throw "Bundled Ollama server did not become ready." }
-
-            & $ollamaExe.FullName pull "gemma3:1b"
-            if ($LASTEXITCODE -ne 0) { throw "Ollama could not download Gemma 3 1B." }
-
-            $modelResponse = Invoke-RestMethod -Uri "http://127.0.0.1:11439/api/tags" -TimeoutSec 20
-            if (-not ($modelResponse.models | Where-Object { $_.name -eq "gemma3:1b" -or $_.model -eq "gemma3:1b" })) {
-              throw "Gemma 3 1B did not appear in the Ollama model list after download."
-            }
-            $modelBytes = (Get-ChildItem -Path $modelDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
-            if ($modelBytes -lt 500MB) { throw "Gemma model cache looks incomplete: $modelBytes bytes." }
-            Write-Host "Prepared Gemma 3 1B model cache: $([math]::Round($modelBytes / 1MB)) MB"
-          } finally {
-            if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
-          }
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ollama/ollama/v0.11.10/LICENSE" -OutFile (Join-Path $ollamaDir "LICENSE")
+          Write-Host "Verified embedded Ollama CLI. Gemma 3 1B is downloaded automatically by NexaAI on first launch with visible progress."
 
       - name: Build self-contained desktop application
         shell: pwsh
@@ -140,7 +107,6 @@ jobs:
           python -m PyInstaller @pyinstallerArgs
           if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
           if (-not (Test-Path "build-assets\ollama\ollama.exe")) { throw "Bundled Ollama executable is missing." }
-          if (-not (Test-Path "build-assets\ollama-models\manifests")) { throw "Bundled Gemma model manifest is missing." }
 
       - name: Prepare Gemma license acceptance and redistribution notices
         shell: pwsh
@@ -228,7 +194,7 @@ $(Get-Content -Path $policyPath -Raw)
           tag_name: desktop-v2.0.0
           name: Nexa AI Desktop v2.0.0 — Fully Bundled Gemma Offline
           body: |
-            NexaAI 2.0.0 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama Windows runtime and Google Gemma 3 1B model. There is no separate Ollama installation, cloud provider, API key or first-run model download. The installer copies the bundled model into the current Windows user's NexaAI engine folder, then launches the app.
+            NexaAI 2.0.0 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Gemma 3 1B (about 806 MB) into its private model folder and displays download progress. There is no separate Ollama installation, cloud provider or API key. After the model download is complete, chat works offline.
 
             The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
 
