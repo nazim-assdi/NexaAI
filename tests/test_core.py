@@ -129,10 +129,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(recent_chat_label("   "), "New conversation")
 
     def test_response_profiles_offer_speed_and_detail_choices(self):
-        self.assertEqual(response_token_limit("Quick"), 384)
-        self.assertEqual(response_token_limit("Balanced"), 768)
-        self.assertEqual(response_token_limit("Detailed"), 1280)
-        self.assertEqual(response_token_limit("unknown"), 768)
+        self.assertEqual(response_token_limit("Quick"), 512)
+        self.assertEqual(response_token_limit("Balanced"), 1024)
+        self.assertEqual(response_token_limit("Detailed"), 1792)
+        self.assertEqual(response_token_limit("unknown"), 1024)
 
     def test_chat_context_keeps_system_and_recent_turns_only(self):
         messages = [{"role": "system", "content": "rules"}]
