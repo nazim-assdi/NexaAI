@@ -1,14 +1,14 @@
 [Setup]
 AppId={{D32E4A64-9A42-4E8D-AC79-1AFD64FB1A10}
 AppName=Nexa AI
-AppVersion=2.0.0
+AppVersion=2.1.0
 AppPublisher=NTech
 DefaultDirName={localappdata}\Programs\NexaAI
 DefaultGroupName=Nexa AI
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\output
-OutputBaseFilename=NexaAI-Setup-2.0.0-Windows-x64
+OutputBaseFilename=NexaAI-Setup-2.1.0-Windows-x64
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
@@ -20,10 +20,9 @@ CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
 DiskSpanning=no
-VersionInfoVersion=2.0.0.0
+VersionInfoVersion=2.1.0.0
 VersionInfoProductName=Nexa AI
-LicenseFile=..\licenses\GEMMA_INSTALLER_LICENSE.txt
-VersionInfoDescription=Bundled Ollama + Gemma 3 1B Offline Assistant
+VersionInfoDescription=Bundled Ollama + Qwen2.5-Coder and Gemini Assistant
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -31,10 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "..\dist\NexaAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build-assets\ollama\*"; DestDir: "{app}\runtime\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\licenses\GEMMA_TERMS_OF_USE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
-Source: "..\licenses\GEMMA_PROHIBITED_USE_POLICY.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
-Source: "..\licenses\GEMMA_INSTALLER_LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
-Source: "..\licenses\GEMMA-NOTICE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\licenses\QWEN2.5-CODER-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\nexa-ai.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 

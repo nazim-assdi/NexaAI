@@ -14,7 +14,7 @@ load_dotenv(override=False)
 class Settings:
     local_base_url: str = os.getenv("NEXA_LOCAL_BASE_URL", "http://127.0.0.1:11439").strip().rstrip("/")
     local_api_key: str = os.getenv("NEXA_LOCAL_API_KEY", "").strip()
-    model: str = os.getenv("NEXA_MODEL", "gemma3:1b").strip()
+    model: str = os.getenv("NEXA_MODEL", "qwen2.5-coder:1.5b").strip()
     host: str = os.getenv("NEXA_HOST", "127.0.0.1").strip()
     port: int = int(os.getenv("NEXA_PORT", "8000"))
     temperature: float = float(os.getenv("NEXA_TEMPERATURE", "0.7"))

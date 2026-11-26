@@ -14,7 +14,7 @@ from .config import settings
 from .file_store import file_store, guess_mime_type
 from . import local_backend
 
-app = FastAPI(title="Nexa AI Local API", version="1.0.0")
+app = FastAPI(title="Nexa AI Local API", version="2.1.0")
 
 
 class ChatRequest(BaseModel):
@@ -112,14 +112,15 @@ async def upload_file(file: UploadFile = File(...)):
     suffix = Path(filename).suffix.lower()
     text_extensions = {".txt", ".md", ".csv", ".json", ".xml", ".py", ".js", ".html", ".css", ".log"}
     allowed = (
-        mime_type.startswith("text/")
+        mime_type in {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+        or mime_type.startswith("text/")
         or mime_type in {"application/pdf", "application/json", "application/xml", "application/javascript", "application/csv"}
         or suffix in text_extensions
     )
     if not allowed:
         raise HTTPException(
             status_code=415,
-            detail="This single-model edition supports selectable-text PDFs and text/code files. Images and videos are not supported by the Gemma 3 1B text model.",
+            detail="This edition supports Qwen2.5-Coder text/code files and online Gemini image attachments. Video attachments are not supported.",
         )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

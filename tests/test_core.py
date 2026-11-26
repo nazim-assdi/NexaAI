@@ -39,9 +39,9 @@ class CoreTests(unittest.TestCase):
         messages = [{"role": "user", "content": "hello"}]
         self.assertEqual(prepare_messages(messages), messages)
 
-    def test_ollama_runtime_uses_gemma_3_1b(self):
-        self.assertEqual(OLLAMA_MODEL, "gemma3:1b")
-        self.assertIn("806", OLLAMA_MODEL_SIZE)
+    def test_ollama_runtime_uses_qwen25_coder_15b(self):
+        self.assertEqual(OLLAMA_MODEL, "qwen2.5-coder:1.5b")
+        self.assertIn("986", OLLAMA_MODEL_SIZE)
 
     def test_ollama_runtime_explains_missing_installation(self):
         runtime = OllamaRuntime()
@@ -63,7 +63,7 @@ class CoreTests(unittest.TestCase):
 
     def test_ollama_runtime_does_not_pull_an_already_installed_model(self):
         runtime = OllamaRuntime()
-        with patch.object(runtime, "installed_models", return_value=["gemma3:1b"]):
+        with patch.object(runtime, "installed_models", return_value=["qwen2.5-coder:1.5b"]):
             runtime.ensure_model()
         self.assertFalse(runtime.started_by_nexa)
 
@@ -160,7 +160,7 @@ class CoreTests(unittest.TestCase):
             image_path.write_bytes(b"image-bytes")
             stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
             with patch("nexa_ai.local_backend.file_store.get", return_value=stored):
-                with self.assertRaisesRegex(RuntimeError, "Gemma 3 1B"):
+                with self.assertRaisesRegex(RuntimeError, "Qwen2.5-Coder"):
                     prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
 
     def test_plugin_toggle_persists(self):
@@ -201,7 +201,7 @@ class CoreTests(unittest.TestCase):
                 {"role": "user", "content": "Build an n8n workflow"},
                 {"role": "assistant", "content": "Here is the plan."},
             ]
-            store.save(conversation_id, "n8n workflow", messages, "gemma3:1b")
+            store.save(conversation_id, "n8n workflow", messages, "qwen2.5-coder:1.5b")
             items = store.list_conversations()
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0]["title"], "n8n workflow")

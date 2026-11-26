@@ -74,7 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "The bundled Ollama CLI failed its version check." }
 
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ollama/ollama/v0.11.10/LICENSE" -OutFile (Join-Path $ollamaDir "LICENSE")
-          Write-Host "Verified embedded Ollama CLI. Gemma 3 1B is downloaded automatically by NexaAI on first launch with visible progress."
+          Write-Host "Verified embedded Ollama CLI. Qwen2.5-Coder 1.5B is downloaded automatically by NexaAI on first launch with visible progress."
 
       - name: Build self-contained desktop application
         shell: pwsh
@@ -108,27 +108,16 @@ jobs:
           if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
           if (-not (Test-Path "build-assets\ollama\ollama.exe")) { throw "Bundled Ollama executable is missing." }
 
-      - name: Prepare Gemma license acceptance and redistribution notices
+      - name: Prepare Qwen2.5-Coder Apache 2.0 model license
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $licenseDir = Join-Path $PWD "licenses"
           New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
-          $termsPath = Join-Path $licenseDir "GEMMA_TERMS_OF_USE.txt"
-          $policyPath = Join-Path $licenseDir "GEMMA_PROHIBITED_USE_POLICY.txt"
-          $agreementPath = Join-Path $licenseDir "GEMMA_INSTALLER_LICENSE.txt"
-          $noticePath = Join-Path $licenseDir "GEMMA-NOTICE.txt"
-
-          Invoke-WebRequest -Uri "https://gemma.ai/resources/terms.md.txt" -OutFile $termsPath
-          Invoke-WebRequest -Uri "https://gemma.ai/resources/prohibited-use.md.txt" -OutFile $policyPath
-          if ((Get-Item $termsPath).Length -lt 4000) { throw "The official Gemma Terms download looks incomplete." }
-          if ((Get-Item $policyPath).Length -lt 1000) { throw "The official Gemma Prohibited Use Policy download looks incomplete." }
-
-          $agreementHeader = "NEXAAI GEMMA MODEL INSTALLATION AGREEMENT`r`n`r`nNexaAI includes Google Gemma 3 1B model weights. By selecting I accept the agreement in this installer and continuing, you agree that your use, reproduction and distribution of Gemma is subject to the complete Gemma Terms of Use and the Gemma Prohibited Use Policy reproduced below. In particular, you must comply with all use restrictions in Section 3.2 of the Gemma Terms of Use. These model terms apply to Gemma only and do not replace the separate notices for other NexaAI components.`r`n`r`n==================== COMPLETE GEMMA TERMS OF USE ====================`r`n`r`n"
-          $agreement = $agreementHeader + (Get-Content -Path $termsPath -Raw) + "`r`n`r`n==================== GEMMA PROHIBITED USE POLICY ====================`r`n`r`n" + (Get-Content -Path $policyPath -Raw)
-          Set-Content -Path $agreementPath -Value $agreement -Encoding utf8
-          Set-Content -Path $noticePath -Value "Gemma is provided under and subject to the Gemma Terms of Use found at gemma.ai/resources/terms" -Encoding utf8
-          Write-Host "Prepared official Gemma terms, prohibited-use policy, installer acceptance text and model notice."
+          $modelLicense = Join-Path $licenseDir "QWEN2.5-CODER-LICENSE.txt"
+          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B/resolve/main/LICENSE" -OutFile $modelLicense
+          if ((Get-Item $modelLicense).Length -lt 8000) { throw "The Qwen2.5-Coder Apache 2.0 license download looks incomplete." }
+          Write-Host "Prepared the Qwen2.5-Coder Apache 2.0 model license."
 
       - name: Install Inno Setup
         shell: pwsh
@@ -180,14 +169,14 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v2.0.0
-          name: Nexa AI Desktop v2.0.0 — Fully Bundled Gemma Offline
+          tag_name: desktop-v2.1.0
+          name: Nexa AI Desktop v2.1.0 — Qwen2.5-Coder Offline + Gemini Online
           body: |
-            NexaAI 2.0.0 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Gemma 3 1B (about 806 MB) into its private model folder and displays download progress. There is no separate Ollama installation, cloud provider or API key. After the model download is complete, chat works offline.
+            NexaAI 2.1.0 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 1.5B (about 986 MB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, chat works offline.
 
             The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
 
-            The refreshed interface includes premium themed dropdowns, a cleaner offline model badge, a more spacious navigation panel, local chat history, follow-up queue, quick/balanced/detailed response profiles, voice tools, plugin manager and n8n Workflow Studio. Gemma 3 1B is compact and CPU-friendly, but less capable than larger models on complex multi-file coding tasks.
+            The refreshed interface includes an offline/online model selector and premium themed dropdowns, a cleaner offline model badge, a more spacious navigation panel, local chat history, follow-up queue, quick/balanced/detailed response profiles, voice tools, plugin manager and n8n Workflow Studio. Qwen2.5-Coder 1.5B is compact and CPU-friendly, but less capable than larger models on complex multi-file coding tasks.
           files: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt

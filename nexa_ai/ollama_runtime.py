@@ -13,9 +13,9 @@ import httpx
 
 OLLAMA_PORT = 11439
 OLLAMA_BASE_URL = f"http://127.0.0.1:{OLLAMA_PORT}"
-OLLAMA_MODEL = "gemma3:1b"
-OLLAMA_MODEL_NAME = "Gemma 3 1B"
-OLLAMA_MODEL_SIZE = "About 806 MB"
+OLLAMA_MODEL = "qwen2.5-coder:1.5b"
+OLLAMA_MODEL_NAME = "Qwen2.5-Coder 1.5B"
+OLLAMA_MODEL_SIZE = "About 986 MB"
 
 
 class OllamaNotInstalled(RuntimeError):
@@ -130,7 +130,7 @@ class OllamaRuntime:
                         detail = response.json().get("error", response.text)
                     except ValueError:
                         detail = response.text
-                    raise RuntimeError(f"Gemma model setup failed: {detail}")
+                    raise RuntimeError(f"Qwen2.5-Coder setup failed: {detail}")
                 for line in response.iter_lines():
                     if not line:
                         continue
@@ -139,8 +139,8 @@ class OllamaRuntime:
                     except ValueError:
                         continue
                     if item.get("error"):
-                        raise RuntimeError(f"Gemma model setup failed: {item['error']}")
-                    status = str(item.get("status", "Installing Gemma 3 1B"))
+                        raise RuntimeError(f"Qwen2.5-Coder setup failed: {item['error']}")
+                    status = str(item.get("status", "Installing Qwen2.5-Coder 1.5B"))
                     completed = int(item.get("completed", 0) or 0)
                     total = int(item.get("total", 0) or 0)
                     now = time.monotonic()
@@ -150,7 +150,7 @@ class OllamaRuntime:
                         progress(status, completed, total, speed)
                     last_time, last_bytes = now, completed
         if self.model not in self.installed_models():
-            raise RuntimeError("Gemma 3 1B setup ended but the model is not listed as installed.")
+            raise RuntimeError("Qwen2.5-Coder 1.5B setup ended but the model is not listed as installed.")
 
     def stop(self) -> None:
         if not self.started_by_nexa or not self.process or self.process.poll() is not None:

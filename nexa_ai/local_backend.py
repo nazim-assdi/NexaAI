@@ -55,7 +55,7 @@ def list_models() -> list[dict[str, Any]]:
 
 def _require_vision_model() -> None:
     raise RuntimeError(
-        "The selected Gemma 3 1B assistant is a text model. Image and video understanding are not enabled in this edition."
+        "Qwen2.5-Coder is a text-only offline model. Select an online Gemini model to analyse images."
     )
 
 
