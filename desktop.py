@@ -1010,7 +1010,7 @@ class NexaDesktop:
                 flush_stream()
                 if kind == "ready":
                     self.ready = True
-                    self.status_var.set("● Offline model ready")
+                    self.status_var.set("● Offline Qwen ready" if self.ai_provider == "local" else f"{self.current_model_name} connected · online chat ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._update_send_button()
                     self.root.after(80, self.show_chat_workspace)
@@ -1066,7 +1066,10 @@ class NexaDesktop:
                     self.status_var.set("Offline engine unavailable · Gemini can still chat")
                     self._update_send_button()
                     self.status_label.configure(fg="#ff8d8d")
-                    messagebox.showerror("Nexa AI could not start", str(payload))
+                    messagebox.showwarning(
+                        "Offline Qwen unavailable",
+                        "The offline Qwen engine could not start. Connected Gemini chat is still available.\n\n" + str(payload),
+                    )
                 elif kind == "first_token":
                     self.status_var.set("Writing answer…")
                     self.status_label.configure(fg=self.ACCENT)
@@ -1100,7 +1103,7 @@ class NexaDesktop:
                     self.pending_files.append(payload)
                     self.uploading = False
                     self._update_send_button()
-                    self.status_var.set("● Offline model ready")
+                    self.status_var.set("File attached · ready to send")
                     self.status_label.configure(fg="#73d6a4")
                     self._refresh_attachments()
                 elif kind == "attach_error":
@@ -1443,12 +1446,12 @@ class NexaDesktop:
         self._show_empty_state()
         self.pending_files.clear()
         self.pending_send_queue.clear()
-        self.send_button.configure(text="↑", state="normal" if self.ready else "disabled")
+        self._update_send_button()
         self._refresh_attachments()
         self.show_chat_workspace()
 
     def toggle_voice_chat(self) -> None:
-        if not self.ready or self.busy or self.uploading:
+        if not self._provider_ready() or self.busy or self.uploading:
             return
         if self.recording:
             self._stop_voice_recording()
@@ -1668,8 +1671,8 @@ class NexaDesktop:
             output.configure(state="disabled")
 
         def generate() -> None:
-            if not self.ready or self.busy:
-                messagebox.showwarning("Local model busy", "Wait until Nexa AI is ready before generating a workflow.", parent=window)
+            if not self._provider_ready() or self.busy:
+                messagebox.showwarning("AI provider not ready", "Wait until the selected AI provider is ready before generating a workflow.", parent=window)
                 return
             model_provider, model_id, model_name = self.ai_provider, self.current_model_id, self.current_model_name
             if model_provider == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
