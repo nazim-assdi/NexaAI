@@ -37,3 +37,10 @@ def enqueue_followup(queue: list[str], text: str, limit: int = 4) -> bool:
 
 def take_followup(queue: list[str]) -> str | None:
     return queue.pop(0) if queue else None
+
+
+def provider_is_ready(provider: str, local_ready: bool, gemini_key_available: bool) -> bool:
+    """Check readiness for the selected provider without coupling Gemini to Ollama."""
+    if str(provider).strip().lower() == "gemini":
+        return bool(gemini_key_available)
+    return bool(local_ready)

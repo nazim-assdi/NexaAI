@@ -1,10 +1,10 @@
-# NexaAI 2.1.1 — NTech Edition · Offline Qwen2.5-Coder 3B + Online Gemini
+# NexaAI 2.1.2 — NTech Edition · Offline Qwen2.5-Coder 3B + Online Gemini
 
 NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. Its default offline coding model is Qwen2.5-Coder 3B, served by the Ollama runtime bundled with the installer. Gemini 3.8 Flash and Gemini 3.5 Flash-Lite are optional online choices.
 
 ## Install
 
-1. Download and run **NexaAI-Setup-2.1.1-Windows-x64.exe**.
+1. Download and run **NexaAI-Setup-2.1.2-Windows-x64.exe**.
 2. The installer copies NexaAI and its bundled Ollama runtime.
 3. Review and accept the Qwen Research License in the installer. Its 3B model is licensed for non-commercial research and evaluation only.
 4. On first launch, NexaAI automatically downloads Qwen2.5-Coder 3B (about 1.9 GB) and shows download progress, speed and ETA.
@@ -43,7 +43,9 @@ The initial model download requires internet. Keep at least 3 GB free for the mo
 
 ## Chat workspace
 
-- Refreshed NTech dark interface and premium-themed dropdowns.
+- Refreshed centered chat layout with clearer user/assistant cards and a larger multi-line message composer.
+- Gemini chat works as soon as its API key is saved; it does not wait for the 1.9 GB Qwen download or local engine startup.
+- Enter sends a message; Shift+Enter inserts a new line.
 - AI selector for offline Qwen2.5-Coder 3B and online Gemini models.
 - Local chat history, recent chats, conversation search and plugin manager.
 - Streaming responses and up to four queued follow-up prompts.
@@ -69,7 +71,7 @@ Describe an automation in Bangla or English. The selected AI generates n8n workf
 
 ## Build from source
 
-The GitHub Actions workflow **Build Nexa AI 2.1.1 Windows Offline Qwen 3B + Gemini Installer** downloads and verifies the official Ollama Windows standalone runtime, obtains the official Qwen Research License and attribution notice, runs the unit tests, compiles the desktop app and produces one Windows x64 installer.
+The GitHub Actions workflow **Build Nexa AI 2.1.2 Windows Qwen 3B + Gemini Chat Fix** downloads and verifies the official Ollama Windows standalone runtime, obtains the official Qwen Research License and attribution notice, runs the unit tests, compiles the desktop app and produces one Windows x64 installer.
 
 Run the optional local runtime smoke test after NexaAI has started its bundled Ollama service:
 

@@ -27,11 +27,11 @@ from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
-from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit, enqueue_followup, take_followup
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit, enqueue_followup, take_followup, provider_is_ready
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "2.1.1"
+APP_VERSION = "2.1.2"
 MODEL_ID = OLLAMA_MODEL
 DEFAULT_AI_CHOICE = "Qwen2.5-Coder 3B · Offline"
 AI_CHOICES = {
@@ -159,6 +159,7 @@ class NexaDesktop:
         self.api_server = None
         self.api_thread: threading.Thread | None = None
         self.ready = False
+        self.file_api_ready = False
         self.busy = False
         self.uploading = False
         self.pending_files: list[dict[str, str]] = []
@@ -278,8 +279,8 @@ class NexaDesktop:
         composer_outer.pack(fill="x", padx=30)
         composer = tk.Frame(composer_outer, bg=self.PANEL_2)
         composer.pack(fill="x")
-        self.input = tk.Text(composer, height=2, wrap="word", bg=self.PANEL_2, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 10), padx=14, pady=12, undo=True)
-        self.input.pack(fill="x", padx=2, pady=(2, 0))
+        self.input = tk.Text(composer, height=2, wrap="word", bg=self.PANEL_2, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 11), padx=16, pady=13, undo=True, spacing1=2, spacing3=3)
+        self.input.pack(fill="x", padx=5, pady=(5, 1))
         self.input_placeholder = "Message Nexa AI…"
         self.input_placeholder_active = True
         self.input.insert("1.0", self.input_placeholder)
@@ -288,23 +289,27 @@ class NexaDesktop:
         self.input.bind("<FocusOut>", self._restore_input_placeholder)
         self.input.bind("<Return>", self._send_enter)
         self.input.bind("<Control-Return>", self._send_hotkey)
+        self.input.bind("<KeyRelease>", self._on_composer_change, add="+")
+        self.input.bind("<<Paste>>", lambda _event: self.root.after_idle(self._on_composer_change))
+        self.input.bind("<<Cut>>", lambda _event: self.root.after_idle(self._on_composer_change))
 
         composer_tools = tk.Frame(composer, bg=self.PANEL_2)
-        composer_tools.pack(fill="x", padx=9, pady=(0, 8))
+        composer_tools.pack(fill="x", padx=11, pady=(2, 10))
         left_tools = tk.Frame(composer_tools, bg=self.PANEL_2)
         left_tools.pack(side="left")
-        self.attach_button = tk.Button(left_tools, text="＋  Attach", command=self.attach_file, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=9, pady=5, cursor="hand2")
-        self.attach_button.pack(side="left", padx=(0, 4))
-        self.voice_button = tk.Button(left_tools, text="🎙 Voice", command=self.toggle_voice_chat, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=9, pady=5, cursor="hand2")
+        self.attach_button = tk.Button(left_tools, text="＋  Attach", command=self.attach_file, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 9), padx=10, pady=6, cursor="hand2")
+        self.attach_button.pack(side="left", padx=(0, 5))
+        self.voice_button = tk.Button(left_tools, text="🎙  Voice", command=self.toggle_voice_chat, bg=self.PANEL_2, fg=self.MUTED, activebackground=self.PANEL, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 9), padx=10, pady=6, cursor="hand2")
         self.voice_button.pack(side="left")
-        self.send_button = tk.Button(composer_tools, text="↑", command=self.send_message, bg=self.ACCENT, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"], activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI Semibold", 14), width=3, height=1, state="disabled", cursor="hand2")
-        self.send_button.pack(side="right", padx=(6, 0))
+        self.send_button = tk.Button(composer_tools, text="Send ↑", command=self.send_message, bg=self.ACCENT, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"], activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, disabledforeground=self.MUTED, relief="flat", borderwidth=0, font=("Segoe UI Semibold", 10), width=9, height=1, padx=8, pady=7, state="disabled", cursor="hand2")
+        self.send_button.pack(side="right", padx=(7, 0))
 
         footer_note = tk.Frame(footer, bg=self.BG)
         footer_note.pack(fill="x", padx=32, pady=(6, 0))
         self.speak_replies_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(footer_note, text="Speak voice-chat replies", variable=self.speak_replies_var, style="Nexa.TCheckbutton").pack(side="left")
-        tk.Label(footer_note, text="Your conversations stay on this PC · NTech", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
+        tk.Label(footer_note, text="Enter to send  ·  Shift+Enter for a new line", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8)).pack(side="right")
+        self._update_send_button()
 
     def _sidebar_button(self, parent, label: str, command, accent: bool = False):
         return tk.Button(parent, text=label, command=command, anchor="w", bg=self.PANEL_2 if accent else self.PANEL, fg=self.THEMES[self.theme_name]["BUTTON_TEXT"] if accent else self.TEXT, activebackground=self.THEMES[self.theme_name]["ACTIVE"], activeforeground=self.TEXT, relief="flat", borderwidth=0, padx=13, pady=10, font=("Segoe UI Semibold" if accent else "Segoe UI", 9), cursor="hand2")
@@ -382,8 +387,8 @@ class NexaDesktop:
         center = tk.Frame(empty, bg=self.BG)
         center.place(relx=0.5, rely=0.48, anchor="center")
         tk.Label(center, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 18), width=2, height=1).pack(pady=(0, 15))
-        tk.Label(center, text="What can I help with?", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 22)).pack(pady=(0, 7))
-        tk.Label(center, text="Chat, code, debug and build automations — privately on your PC.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9)).pack(pady=(0, 19))
+        tk.Label(center, text="Your ideas start here.", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 24)).pack(pady=(0, 8))
+        tk.Label(center, text="Ask a question, write code, or build your next workflow.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 10)).pack(pady=(0, 22))
         cards = tk.Frame(center, bg=self.BG)
         cards.pack()
         for index, (title, description, prompt) in enumerate(CHAT_SUGGESTIONS):
@@ -399,6 +404,7 @@ class NexaDesktop:
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
         self.input.insert("1.0", prompt)
+        self._on_composer_change()
         self.input.focus_set()
 
     def show_chat_workspace(self) -> None:
@@ -417,12 +423,48 @@ class NexaDesktop:
             self.input.delete("1.0", "end")
             self.input.configure(fg=self.TEXT)
             self.input_placeholder_active = False
+        self._update_send_button()
 
     def _restore_input_placeholder(self, _event=None) -> None:
         if not self.input_placeholder_active and not self.input.get("1.0", "end-1c").strip():
             self.input.insert("1.0", self.input_placeholder)
             self.input.configure(fg=self.MUTED)
             self.input_placeholder_active = True
+        self._update_send_button()
+
+    def _provider_ready(self) -> bool:
+        return provider_is_ready(
+            self.ai_provider,
+            self.ready,
+            self.secret_store.has_secret("gemini_api_key"),
+        )
+
+    def _update_send_button(self) -> None:
+        button = getattr(self, "send_button", None)
+        if button is None:
+            return
+        try:
+            draft = "" if self.input_placeholder_active else self.input.get("1.0", "end-1c").strip()
+            has_content = bool(draft or self.pending_files)
+            enabled = self._provider_ready() and not self.uploading and (self.busy or has_content)
+            button.configure(
+                state="normal" if enabled else "disabled",
+                text="Queue" if self.busy else "Send ↑",
+            )
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _on_composer_change(self, _event=None) -> None:
+        try:
+            if self.input_placeholder_active:
+                lines = 2
+            else:
+                count = self.input.count("1.0", "end-1c", "displaylines")
+                lines = int(count[0]) if count else 1
+            self.input.configure(height=max(2, min(7, lines)))
+        except (IndexError, TypeError, tk.TclError):
+            pass
+        self._update_send_button()
 
     def _send_enter(self, event=None):
         if event is not None and (event.state & 0x0001):
@@ -538,6 +580,7 @@ class NexaDesktop:
             self.gemini_connect_button.configure(text="Gemini Settings" if self.secret_store.has_secret("gemini_api_key") else "Connect Gemini")
         if save:
             self._save_preferences()
+        self._update_send_button()
 
     def _change_ai_choice(self, _event=None) -> None:
         selected = self.ai_choice_var.get()
@@ -737,7 +780,9 @@ class NexaDesktop:
             messagebox.showerror("Plugin import failed", str(exc))
 
     def _make_message_text(self, parent, text: str, background: str, foreground: str, width: int, padx: int, pady: int):
-        widget = tk.Text(parent, wrap="word", bg=background, fg=foreground, insertbackground=foreground, relief="flat", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10), width=width, height=1, padx=padx, pady=pady, spacing1=3, spacing3=4, undo=False)
+        widget = tk.Text(parent, wrap="word", bg=background, fg=foreground, insertbackground=foreground, relief="flat", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10), width=width, height=1, padx=padx, pady=pady, spacing1=4, spacing3=5, undo=False)
+        widget.tag_configure("codeblock", background=self.PANEL_2, foreground=self.TEXT, lmargin1=10, lmargin2=10, rmargin=10, spacing1=5, spacing3=5)
+        widget.tag_configure("heading", foreground=self.ACCENT, font=("Segoe UI Semibold", 11))
         if text:
             widget.insert("1.0", text)
         widget.configure(state="disabled")
@@ -756,37 +801,73 @@ class NexaDesktop:
         if self.empty_state is not None and self.empty_state.winfo_exists():
             self.empty_state.destroy()
             self.empty_state = None
-        row = tk.Frame(self.chat_feed, bg=self.BG)
-        row.pack(fill="x", padx=22 if role == "assistant" else 18, pady=(15, 11))
+
         canvas_width = max(560, self.chat_canvas.winfo_width())
-        text_width = max(44, min(90, int((canvas_width - 290) / 8)))
+        content_width = min(920, max(420, canvas_width - 56))
+        side_pad = max(20, (canvas_width - content_width) // 2)
+        text_width = max(42, min(108, int((content_width - 52) / 8)))
+        row = tk.Frame(self.chat_feed, bg=self.BG)
+        row.pack(fill="x", padx=side_pad, pady=(15, 9))
+
         if role == "user":
-            bubble = tk.Frame(row, bg=self.PANEL_2, highlightbackground=self.BORDER, highlightthickness=1, padx=1, pady=1)
-            bubble.pack(anchor="e", padx=(70, 0))
-            self._make_message_text(bubble, text, self.PANEL_2, self.TEXT, min(72, text_width), 13, 9)
+            bubble = tk.Frame(
+                row, bg=self.PANEL_2, highlightbackground=self.BORDER,
+                highlightthickness=1, padx=1, pady=1,
+            )
+            bubble.pack(anchor="e", padx=(min(150, content_width // 4), 0))
+            self._make_message_text(
+                bubble, text, self.PANEL_2, self.TEXT,
+                min(82, text_width), 15, 11,
+            )
             self.current_assistant_widget = None
             self.current_assistant_row = None
+            self.current_assistant_copy_button = None
+            self._scroll_chat_to_bottom()
+            return
+
+        header = tk.Frame(row, bg=self.BG)
+        header.pack(fill="x", pady=(0, 7))
+        tk.Label(
+            header, text="N", bg=self.ACCENT, fg="#101820",
+            font=("Segoe UI Semibold", 9), width=2, height=1,
+        ).pack(side="left", padx=(0, 9))
+        tk.Label(
+            header, text="Nexa AI", bg=self.BG, fg=self.TEXT,
+            font=("Segoe UI Semibold", 9),
+        ).pack(side="left")
+        tk.Label(
+            header, text=f"· {self.current_model_name}", bg=self.BG,
+            fg=self.MUTED, font=("Segoe UI", 8),
+        ).pack(side="left", padx=(5, 0))
+
+        body = tk.Frame(
+            row, bg=self.PANEL, highlightbackground=self.BORDER,
+            highlightthickness=1, padx=1, pady=1,
+        )
+        body.pack(fill="x", padx=(34, 5))
+        message_widget = self._make_message_text(
+            body, text, self.PANEL, self.TEXT, text_width, 16, 13,
+        )
+        actions = tk.Frame(row, bg=self.BG)
+        actions.pack(fill="x", padx=(34, 5), pady=(5, 0))
+        copy_button = tk.Button(
+            actions, text="Copy", command=lambda w=message_widget: self._copy_message_text(w),
+            bg=self.BG, fg=self.MUTED, activebackground=self.PANEL_2,
+            activeforeground=self.TEXT, relief="flat", borderwidth=0,
+            font=("Segoe UI", 8), padx=9, pady=4, cursor="hand2",
+            state="normal" if text else "disabled",
+        )
+        copy_button.pack(side="left")
+
+        if not text:
+            self.current_assistant_widget = message_widget
+            self.current_assistant_row = row
+            self.current_assistant_copy_button = copy_button
         else:
-            header = tk.Frame(row, bg=self.BG)
-            header.pack(fill="x", pady=(0, 5))
-            tk.Label(header, text="N", bg=self.ACCENT, fg="#101820", font=("Segoe UI Semibold", 9), width=2, height=1).pack(side="left", padx=(0, 9))
-            tk.Label(header, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(side="left")
-            body = tk.Frame(row, bg=self.BG)
-            body.pack(fill="x", padx=(31, 0))
-            message_widget = self._make_message_text(body, text, self.BG, self.TEXT, text_width, 1, 2)
-            actions = tk.Frame(row, bg=self.BG)
-            actions.pack(fill="x", padx=(31, 0), pady=(4, 0))
-            copy_button = tk.Button(actions, text="⧉  Copy answer", command=lambda w=message_widget: self._copy_message_text(w), bg=self.BG, fg=self.MUTED, activebackground=self.PANEL_2, activeforeground=self.TEXT, relief="flat", borderwidth=0, font=("Segoe UI", 8), padx=8, pady=3, cursor="hand2", state="normal" if text else "disabled")
-            copy_button.pack(side="left")
-            if not text:
-                self.current_assistant_widget = message_widget
-                self.current_assistant_row = row
-                self.current_assistant_copy_button = copy_button
-            else:
-                self._format_message_widget(message_widget)
-                self.current_assistant_widget = None
-                self.current_assistant_row = None
-                self.current_assistant_copy_button = None
+            self._format_message_widget(message_widget)
+            self.current_assistant_widget = None
+            self.current_assistant_row = None
+            self.current_assistant_copy_button = None
         self._scroll_chat_to_bottom()
 
     def _copy_message_text(self, widget) -> None:
@@ -869,16 +950,8 @@ class NexaDesktop:
             self.ollama_runtime.ensure_server(self.log_handle)
             self.log_handle.write("Ollama local API is ready.\n")
 
-            def report_progress(status: str, completed: int, total: int, speed: float) -> None:
-                self.events.put(("model_download_status", status))
-                if total:
-                    self.events.put(("model_download_progress", (completed, total, speed)))
-
-            if OLLAMA_MODEL not in self.ollama_runtime.installed_models():
-                self.events.put(("model_download_status", f"Installing missing Qwen2.5-Coder 3B · {OLLAMA_MODEL_SIZE}"))
-            self.ollama_runtime.ensure_model(report_progress)
-            self.log_handle.write(f"Local model ready: {OLLAMA_MODEL}\n")
-
+            # Start local file services before the model pull. Gemini can chat
+            # and attach local files while Qwen is still downloading.
             if self.api_server is None:
                 from nexa_ai.config import settings
                 import uvicorn
@@ -889,6 +962,17 @@ class NexaDesktop:
                 self.api_thread.start()
                 if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
                     raise RuntimeError("NexaAI local API could not start. Port 8000 may already be in use.")
+            self.events.put(("file_api_ready", None))
+
+            def report_progress(status: str, completed: int, total: int, speed: float) -> None:
+                self.events.put(("model_download_status", status))
+                if total:
+                    self.events.put(("model_download_progress", (completed, total, speed)))
+
+            if OLLAMA_MODEL not in self.ollama_runtime.installed_models():
+                self.events.put(("model_download_status", f"Installing missing Qwen2.5-Coder 3B · {OLLAMA_MODEL_SIZE}"))
+            self.ollama_runtime.ensure_model(report_progress)
+            self.log_handle.write(f"Local model ready: {OLLAMA_MODEL}\n")
             self.events.put(("ready", None))
         except OllamaNotInstalled as exc:
             self.events.put(("ollama_missing", str(exc)))
@@ -928,8 +1012,11 @@ class NexaDesktop:
                     self.ready = True
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
-                    self.send_button.configure(state="normal")
+                    self._update_send_button()
                     self.root.after(80, self.show_chat_workspace)
+                elif kind == "file_api_ready":
+                    self.file_api_ready = True
+                    self.status_var.set("Local file service ready · " + self.current_model_name)
                 elif kind == "history_updated":
                     self._refresh_recent_conversations()
                 elif kind == "gemini_connected":
@@ -944,6 +1031,7 @@ class NexaDesktop:
                     self._apply_ai_choice(choice)
                     self.status_var.set("Gemini connected · ready for online chat")
                     self.status_label.configure(fg="#73d6a4")
+                    self._update_send_button()
                 elif kind == "gemini_connect_error":
                     try:
                         payload["button"].configure(state="normal", text="Connect & Save")
@@ -974,7 +1062,9 @@ class NexaDesktop:
                         + str(payload),
                     )
                 elif kind == "boot_error":
-                    self.status_var.set("Offline engine failed to start")
+                    self.ready = False
+                    self.status_var.set("Offline engine unavailable · Gemini can still chat")
+                    self._update_send_button()
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror("Nexa AI could not start", str(payload))
                 elif kind == "first_token":
@@ -982,7 +1072,7 @@ class NexaDesktop:
                     self.status_label.configure(fg=self.ACCENT)
                 elif kind == "done":
                     self.busy = False
-                    self.send_button.configure(state="normal" if self.ready else "disabled", text="↑")
+                    self._update_send_button()
                     self.status_var.set("● Gemini online ready" if self.active_request_provider == "gemini" else "● Offline Qwen ready")
                     self.status_label.configure(fg="#73d6a4")
                     self.ai_selector.configure(state="readonly")
@@ -997,7 +1087,7 @@ class NexaDesktop:
                             self._speak_text(str(self.messages[-1].get("content", "")))
                 elif kind == "request_error":
                     self.busy = False
-                    self.send_button.configure(state="normal" if self.ready else "disabled", text="↑")
+                    self._update_send_button()
                     self.status_var.set("Request failed")
                     self.status_label.configure(fg="#ff8d8d")
                     self.ai_selector.configure(state="readonly")
@@ -1009,13 +1099,13 @@ class NexaDesktop:
                 elif kind == "attached":
                     self.pending_files.append(payload)
                     self.uploading = False
-                    self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
+                    self._update_send_button()
                     self.status_var.set("● Offline model ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._refresh_attachments()
                 elif kind == "attach_error":
                     self.uploading = False
-                    self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
+                    self._update_send_button()
                     messagebox.showerror("Attachment error", str(payload))
                 elif kind == "voice_status":
                     self.status_var.set(str(payload))
@@ -1034,7 +1124,7 @@ class NexaDesktop:
                     self.send_message()
                 elif kind == "voice_error":
                     self.voice_button.configure(state="normal", text="🎙 Voice")
-                    self.send_button.configure(state="normal" if self.ready and not self.busy else "disabled")
+                    self._update_send_button()
                     self.recording = False
                     self.voice_turn = False
                     self.status_var.set("Voice chat unavailable")
@@ -1049,7 +1139,10 @@ class NexaDesktop:
         self.attachments_label.configure(text=("Attached: " + "  ·  ".join(names)) if names else "")
 
     def attach_file(self) -> None:
-        if self.uploading or self.busy or not self.ready:
+        if self.uploading or self.busy or not self._provider_ready():
+            return
+        if not self.file_api_ready:
+            self.status_var.set("Local attachment service is still starting…")
             return
         path = filedialog.askopenfilename(
             title="Attach a local document",
@@ -1061,7 +1154,7 @@ class NexaDesktop:
         if not path:
             return
         self.uploading = True
-        self.send_button.configure(state="disabled")
+        self._update_send_button()
         self.status_var.set("Saving attachment locally…")
         self.status_label.configure(fg=self.ACCENT)
         threading.Thread(target=self._upload_file, args=(Path(path),), daemon=True).start()
@@ -1083,10 +1176,19 @@ class NexaDesktop:
         return "break"
 
     def send_message(self) -> None:
-        if not self.ready or self.uploading:
+        if self.uploading:
             return
         text = "" if self.input_placeholder_active else self.input.get("1.0", "end-1c").strip()
         if not text and not self.pending_files:
+            return
+
+        if self.ai_provider == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
+            self.pending_ai_choice = self.ai_choice
+            self.open_gemini_settings()
+            return
+        if not self._provider_ready():
+            self.status_var.set("Offline Qwen is still starting. Select connected Gemini to chat now.")
+            self._update_send_button()
             return
 
         # Keep a follow-up instead of dropping it while the local model is responding.
@@ -1100,7 +1202,7 @@ class NexaDesktop:
             self.input.delete("1.0", "end")
             self.input_placeholder_active = False
             self.input.configure(fg=self.TEXT)
-            self.send_button.configure(text="Queue " + str(len(self.pending_send_queue)), state="normal")
+            self._update_send_button()
             self.status_var.set(f"Follow-up queued · {len(self.pending_send_queue)} waiting")
             return
 
@@ -1113,7 +1215,7 @@ class NexaDesktop:
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
         self.busy = True
-        self.send_button.configure(state="normal", text="Queue")
+        self._update_send_button()
         self.status_var.set(f"Preparing {self.current_model_name} response…")
         self.status_label.configure(fg=self.ACCENT)
         attachments = list(self.pending_files)
@@ -1137,7 +1239,7 @@ class NexaDesktop:
         threading.Thread(target=self._stream_request, args=(max_tokens, provider, model_id), daemon=True, name="NexaResponse").start()
 
     def _send_next_queued(self) -> None:
-        if not self.ready or self.busy or not self.pending_send_queue:
+        if not self._provider_ready() or self.busy or not self.pending_send_queue:
             return
         next_text = take_followup(self.pending_send_queue)
         if next_text is None:
@@ -1387,7 +1489,7 @@ class NexaDesktop:
         self._voice_capture_rate = capture_rate
         self.recording = True
         self.voice_button.configure(text="■ Stop & send", state="normal")
-        self.send_button.configure(state="disabled")
+        self._update_send_button()
         self.status_var.set(f"● Listening · microphone {capture_rate} Hz · speak now")
         self.status_label.configure(fg="#d6b66d")
 
@@ -1409,7 +1511,7 @@ class NexaDesktop:
             self.recording = False
             self.recording_stream = None
             self.voice_button.configure(text="🎙 Voice", state="normal")
-            self.send_button.configure(state="normal" if self.ready else "disabled")
+            self._update_send_button()
             self.status_var.set("Microphone could not start")
             messagebox.showerror("Microphone error", str(exc))
 
@@ -1444,7 +1546,7 @@ class NexaDesktop:
                 wav.writeframes(audio.tobytes())
         except Exception as exc:
             self.voice_button.configure(text="🎙 Voice", state="normal")
-            self.send_button.configure(state="normal" if self.ready else "disabled")
+            self._update_send_button()
             self.status_var.set("Voice recording failed")
             self.status_label.configure(fg="#ff8d8d")
             messagebox.showerror("Voice chat", str(exc))

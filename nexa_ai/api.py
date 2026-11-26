@@ -14,7 +14,7 @@ from .config import settings
 from .file_store import file_store, guess_mime_type
 from . import local_backend
 
-app = FastAPI(title="Nexa AI Local API", version="2.1.0")
+app = FastAPI(title="Nexa AI Local API", version="2.1.2")
 
 
 class ChatRequest(BaseModel):

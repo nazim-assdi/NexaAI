@@ -1,4 +1,4 @@
-name: Build Nexa AI 2.1.1 Windows Offline Qwen 3B + Gemini Installer
+name: Build Nexa AI 2.1.2 Windows Qwen 3B + Gemini Chat Fix
 
 concurrency:
   group: nexa-ai-windows-installer-${{ github.ref }}
@@ -171,10 +171,10 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v2.1.1
-          name: Nexa AI Desktop v2.1.1 — Qwen2.5-Coder Offline + Gemini Online
+          tag_name: desktop-v2.1.2
+          name: Nexa AI Desktop v2.1.2 — Gemini Chat Fix + Refreshed UI
           body: |
-            NexaAI 2.1.1 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 3B (about 1.9 GB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, offline chat works without a network connection. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
+            NexaAI 2.1.2 is a Windows x64 assistant with independent Gemini online chat and offline Qwen2.5-Coder 3B. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 3B (about 1.9 GB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, offline chat works without a network connection. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
 
             The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
 
