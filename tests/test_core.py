@@ -17,7 +17,7 @@ from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.api import ChatRequest
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
-from nexa_ai.chat_layout import build_chat_context, response_token_limit, enqueue_followup, take_followup, provider_is_ready
+from nexa_ai.chat_layout import build_chat_context, response_token_limit, enqueue_followup, take_followup
 from nexa_ai.voice_utils import resample_mono_int16
 
 
@@ -82,6 +82,11 @@ class CoreTests(unittest.TestCase):
     def test_ollama_stream_parser_surfaces_server_errors(self):
         with self.assertRaisesRegex(RuntimeError, "model not found"):
             parse_ollama_stream_chunk('{"error":"model not found"}')
+
+    def test_response_profiles_support_complete_answers(self):
+        self.assertEqual(response_token_limit("Quick"), 512)
+        self.assertEqual(response_token_limit("Balanced"), 1024)
+        self.assertEqual(response_token_limit("Detailed"), 1792)
 
     def test_followup_queue_preserves_order_and_enforces_limit(self):
         queue = []
@@ -251,15 +256,6 @@ class CoreTests(unittest.TestCase):
                 archive.writestr("plugin.json", json.dumps({"id": "unsafe-plugin"}))
             with self.assertRaises(ValueError):
                 manager.import_plugin_zip(plugin_zip)
-
-
-    def test_gemini_readiness_does_not_depend_on_local_qwen(self):
-        self.assertTrue(provider_is_ready("gemini", local_ready=False, gemini_key_available=True))
-        self.assertFalse(provider_is_ready("gemini", local_ready=True, gemini_key_available=False))
-
-    def test_offline_readiness_still_requires_local_engine(self):
-        self.assertTrue(provider_is_ready("local", local_ready=True, gemini_key_available=False))
-        self.assertFalse(provider_is_ready("local", local_ready=False, gemini_key_available=True))
 
 
 if __name__ == "__main__":

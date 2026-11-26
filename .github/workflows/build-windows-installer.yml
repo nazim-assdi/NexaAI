@@ -1,4 +1,4 @@
-name: Build Nexa AI 2.1.2 Windows Qwen 3B + Gemini Chat Fix
+name: Build Nexa AI 2.1.3 Windows Offline Qwen 3B Installer
 
 concurrency:
   group: nexa-ai-windows-installer-${{ github.ref }}
@@ -171,14 +171,14 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v2.1.2
-          name: Nexa AI Desktop v2.1.2 — Gemini Chat Fix + Refreshed UI
+          tag_name: desktop-v2.1.3
+          name: Nexa AI Desktop v2.1.3 — Offline Qwen + Chat Display Fix
           body: |
-            NexaAI 2.1.2 is a Windows x64 assistant with independent Gemini online chat and offline Qwen2.5-Coder 3B. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 3B (about 1.9 GB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, offline chat works without a network connection. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
+            NexaAI 2.1.3 is an offline-only Windows x64 assistant powered by Qwen2.5-Coder 3B. The setup installer includes the Ollama standalone runtime. On first launch, NexaAI downloads the model (about 1.9 GB) into its private model folder with visible progress. No cloud AI provider, API key or account is included or required. After the first download, chats and supported attachments remain on this PC. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
 
             The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
 
-            The refreshed interface includes an offline/online model selector and premium themed dropdowns, a cleaner offline model badge, a more spacious navigation panel, local chat history, follow-up queue, quick/balanced/detailed response profiles, voice tools, plugin manager and n8n Workflow Studio. Qwen2.5-Coder 3B downloads about 1.9 GB. It is licensed for non-commercial research/evaluation only under the Qwen Research License; commercial use requires a separate license from Alibaba Cloud.
+            The chat display now shows a visible Thinking state, keeps streamed text while generating, and re-renders the complete final answer after generation. Message height is recalculated after wrapping and resizing to prevent clipped or missing lines. The composer supports Enter-to-send and Shift+Enter for new lines. The workspace keeps local history, follow-up queue, expanded Quick/Balanced/Detailed response limits, voice tools, plugin manager and n8n Workflow Studio. The Qwen 3B model is licensed for non-commercial research/evaluation only; commercial use requires a separate license from Alibaba Cloud.
           files: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt

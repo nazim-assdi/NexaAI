@@ -17,7 +17,7 @@ def recent_chat_label(title: str, max_length: int = 30) -> str:
         return text
     return text[: max(1, max_length - 1)].rstrip() + "…"
 
-RESPONSE_PROFILES = {"Quick": 384, "Balanced": 768, "Detailed": 1280}
+RESPONSE_PROFILES = {"Quick": 512, "Balanced": 1024, "Detailed": 1792}
 
 def response_token_limit(profile: str) -> int:
     return RESPONSE_PROFILES.get(str(profile), RESPONSE_PROFILES["Balanced"])
@@ -37,10 +37,3 @@ def enqueue_followup(queue: list[str], text: str, limit: int = 4) -> bool:
 
 def take_followup(queue: list[str]) -> str | None:
     return queue.pop(0) if queue else None
-
-
-def provider_is_ready(provider: str, local_ready: bool, gemini_key_available: bool) -> bool:
-    """Check readiness for the selected provider without coupling Gemini to Ollama."""
-    if str(provider).strip().lower() == "gemini":
-        return bool(gemini_key_available)
-    return bool(local_ready)

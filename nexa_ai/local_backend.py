@@ -152,7 +152,7 @@ def generate_text(
     try:
         content = data["message"]["content"]
         if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("Gemma 3 1B returned an empty assistant message.")
+            raise RuntimeError("Qwen2.5-Coder 3B returned an empty assistant message.")
         return content
     except (KeyError, TypeError) as exc:
         raise RuntimeError(f"Unexpected Ollama response: {json.dumps(data)[:800]}") from exc

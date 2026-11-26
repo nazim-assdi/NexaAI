@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 import wave
-import webbrowser
 from pathlib import Path
 from uuid import uuid4
 from typing import Any
@@ -20,25 +19,18 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 from nexa_ai.ollama_runtime import OllamaRuntime, OllamaNotInstalled, OLLAMA_MODEL, OLLAMA_MODEL_NAME, OLLAMA_MODEL_SIZE
-from nexa_ai.gemini_backend import stream_text as stream_gemini, test_api_key as test_gemini_api_key
-from nexa_ai.secure_store import DPAPISecretStore
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
 from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.ui_layout import calculate_window_geometry
-from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit, enqueue_followup, take_followup, provider_is_ready
+from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_context, response_token_limit, enqueue_followup, take_followup
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 MODEL_ID = OLLAMA_MODEL
 DEFAULT_AI_CHOICE = "Qwen2.5-Coder 3B · Offline"
-AI_CHOICES = {
-    DEFAULT_AI_CHOICE: ("local", OLLAMA_MODEL, OLLAMA_MODEL_NAME),
-    "Gemini 3.8 Flash · Online": ("gemini", "gemini-3.8-flash", "Gemini 3.8 Flash"),
-    "Gemini 3.5 Flash-Lite · Online": ("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
-}
 LOCAL_MODEL_PORT = 11439
 API_PORT = 8000
 SYSTEM_PROMPT = (
@@ -133,7 +125,13 @@ class NexaDesktop:
 
         self.data_dir = configure_environment()
         self.app_root = app_data_dir()
-        self.secret_store = DPAPISecretStore(self.app_root / "secrets")
+        # Remove the encrypted Gemini credential stored by legacy versions.
+        legacy_gemini_key = self.app_root / "secrets" / "gemini_api_key.dpapi"
+        try:
+            legacy_gemini_key.unlink(missing_ok=True)
+            legacy_gemini_key.parent.rmdir()
+        except OSError:
+            pass
         self.plugin_manager = PluginManager(self.app_root)
         self.history_store = HistoryStore(self.data_dir)
         self.conversation_id = uuid4().hex
@@ -141,18 +139,14 @@ class NexaDesktop:
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
         self.response_profile = self._load_response_preference()
-        self.ai_choice = self._load_ai_preference()
-        self.pending_ai_choice: str | None = None
-        self.active_request_provider = "local"
         self._voice_capture_rate = 16000
         self.recording_warnings = ""
         self.pending_send_queue: list[str] = []
         self._set_palette(self.theme_name)
         self.root.configure(bg=self.BG)
-        self.current_model_key = self.ai_choice
+        self.current_model_key = MODEL_ID
         self.current_model_id = MODEL_ID
         self.current_model_name = OLLAMA_MODEL_NAME
-        self._apply_ai_choice(self.ai_choice, save=False)
         self.ollama_runtime = OllamaRuntime()
         self.log_path = app_data_dir() / "nexa-runtime.log"
         self.log_handle = self.log_path.open("a", encoding="utf-8", buffering=1)
@@ -221,13 +215,8 @@ class NexaDesktop:
         model_card.pack(fill="x")
         self.model_title_label = tk.Label(model_card, text=self.current_model_name, bg=self.PANEL_2, fg="#80cfa0", font=("Segoe UI Semibold", 9))
         self.model_title_label.pack(anchor="w")
-        tk.Label(model_card, text="Choose an offline or online AI", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(3, 0))
-        self.ai_choice_var = tk.StringVar(value=self.ai_choice)
-        self.ai_selector = ttk.Combobox(model_card, textvariable=self.ai_choice_var, values=list(AI_CHOICES.keys()), state="readonly", width=27, font=("Segoe UI Semibold", 8), style="Nexa.TCombobox", height=6)
-        self.ai_selector.pack(fill="x", pady=(7, 6))
-        self.ai_selector.bind("<<ComboboxSelected>>", self._change_ai_choice)
-        self.gemini_connect_button = ttk.Button(model_card, text="Connect Gemini", style="Nexa.TButton", command=self.open_gemini_settings)
-        self.gemini_connect_button.pack(fill="x")
+        tk.Label(model_card, text="OFFLINE ENGINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8)).pack(anchor="w", pady=(3, 0))
+        tk.Label(model_card, text="Runs on this PC · No API key · No cloud account", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8), wraplength=225, justify="left").pack(anchor="w", pady=(7, 0))
         tk.Label(bottom, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(9, 0))
 
         main = tk.Frame(shell, bg=self.BG)
@@ -377,6 +366,7 @@ class NexaDesktop:
         self.current_assistant_widget = None
         self.current_assistant_row = None
         self.current_assistant_copy_button = None
+        self.assistant_placeholder = False
         self.empty_state = None
 
     def _show_empty_state(self) -> None:
@@ -433,11 +423,7 @@ class NexaDesktop:
         self._update_send_button()
 
     def _provider_ready(self) -> bool:
-        return provider_is_ready(
-            self.ai_provider,
-            self.ready,
-            self.secret_store.has_secret("gemini_api_key"),
-        )
+        return bool(self.ready)
 
     def _update_send_button(self) -> None:
         button = getattr(self, "send_button", None)
@@ -552,115 +538,6 @@ class NexaDesktop:
         for child in widget.winfo_children():
             self._retheme_widget(child, colour_map)
 
-    def _load_ai_preference(self) -> str:
-        try:
-            payload = json.loads(self.preferences_path.read_text(encoding="utf-8"))
-            selected = str(payload.get("ai_choice", DEFAULT_AI_CHOICE))
-        except (OSError, ValueError, AttributeError):
-            selected = DEFAULT_AI_CHOICE
-        if selected not in AI_CHOICES:
-            return DEFAULT_AI_CHOICE
-        if AI_CHOICES[selected][0] == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
-            return DEFAULT_AI_CHOICE
-        return selected
-
-    def _apply_ai_choice(self, selected: str, save: bool = True) -> None:
-        if selected not in AI_CHOICES:
-            selected = DEFAULT_AI_CHOICE
-        provider, model_id, model_name = AI_CHOICES[selected]
-        self.ai_choice, self.ai_provider = selected, provider
-        self.current_model_key, self.current_model_id, self.current_model_name = selected, model_id, model_name
-        if hasattr(self, "ai_choice_var"):
-            self.ai_choice_var.set(selected)
-        if hasattr(self, "model_title_label"):
-            self.model_title_label.configure(text=model_name)
-        if hasattr(self, "model_badge"):
-            self.model_badge.configure(text=f"{model_name.upper()} · {'ONLINE' if provider == 'gemini' else 'OFFLINE'}")
-        if hasattr(self, "gemini_connect_button"):
-            self.gemini_connect_button.configure(text="Gemini Settings" if self.secret_store.has_secret("gemini_api_key") else "Connect Gemini")
-        if save:
-            self._save_preferences()
-        self._update_send_button()
-
-    def _change_ai_choice(self, _event=None) -> None:
-        selected = self.ai_choice_var.get()
-        if selected not in AI_CHOICES:
-            self.ai_choice_var.set(self.ai_choice)
-            return
-        if AI_CHOICES[selected][0] == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
-            self.pending_ai_choice = selected
-            self.ai_choice_var.set(self.ai_choice)
-            self.open_gemini_settings()
-            return
-        self._apply_ai_choice(selected)
-        self.status_var.set(f"Selected {self.current_model_name}")
-
-    def open_gemini_settings(self) -> None:
-        window = tk.Toplevel(self.root)
-        window.title("Nexa AI · Connect Gemini")
-        window.geometry("540x340")
-        window.resizable(False, False)
-        window.configure(bg=self.BG)
-        tk.Label(window, text="Connect Google Gemini", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 17)).pack(anchor="w", padx=22, pady=(20, 5))
-        tk.Label(window, text="Offline Qwen2.5-Coder needs no key. Gemini requires your Google AI Studio API key. Free-tier quotas apply, and Google may use free-tier prompts to improve its products.", bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9), wraplength=490, justify="left").pack(anchor="w", padx=22, pady=(0, 14))
-        tk.Label(window, text="Gemini API key", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(anchor="w", padx=22)
-        key_var = tk.StringVar()
-        key_entry = tk.Entry(window, textvariable=key_var, show="•", bg=self.PANEL_2, fg=self.TEXT, insertbackground=self.TEXT, relief="flat", font=("Segoe UI", 10))
-        key_entry.pack(fill="x", padx=22, pady=(5, 8), ipady=8)
-        try:
-            existing = self.secret_store.get_secret("gemini_api_key")
-        except Exception as exc:
-            existing, stored_error = None, str(exc)
-        else:
-            stored_error = ""
-        if existing:
-            key_var.set(existing)
-        status_var = tk.StringVar(value=stored_error or ("Key is encrypted with Windows DPAPI on this PC." if existing else "No Gemini key saved. Offline Qwen stays available."))
-        tk.Label(window, textvariable=status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), wraplength=490, justify="left").pack(anchor="w", padx=22, pady=(0, 9))
-        buttons = tk.Frame(window, bg=self.BG)
-        buttons.pack(fill="x", padx=22, pady=(4, 16))
-
-        def open_key_page() -> None:
-            webbrowser.open("https://aistudio.google.com/api-keys")
-
-        def connect() -> None:
-            key = key_var.get().strip()
-            if not key:
-                status_var.set("Paste your Google AI Studio API key first.")
-                return
-            connect_button.configure(state="disabled", text="Checking…")
-            status_var.set("Testing Gemini key…")
-
-            def worker() -> None:
-                try:
-                    test_gemini_api_key(key)
-                    self.secret_store.set_secret("gemini_api_key", key)
-                    self.events.put(("gemini_connected", {"window": window}))
-                except Exception as exc:
-                    self.events.put(("gemini_connect_error", {"window": window, "button": connect_button, "message": str(exc)}))
-
-            threading.Thread(target=worker, daemon=True, name="NexaGeminiConnect").start()
-
-        def disconnect() -> None:
-            try:
-                self.secret_store.delete_secret("gemini_api_key")
-                if self.ai_provider == "gemini":
-                    self._apply_ai_choice(DEFAULT_AI_CHOICE)
-                self.pending_ai_choice = None
-                self.gemini_connect_button.configure(text="Connect Gemini")
-                status_var.set("Gemini key removed. Offline Qwen remains available.")
-                key_var.set("")
-            except Exception as exc:
-                status_var.set(str(exc))
-
-        ttk.Button(buttons, text="Get API key", style="Nexa.TButton", command=open_key_page).pack(side="left")
-        if existing:
-            ttk.Button(buttons, text="Disconnect", style="Nexa.TButton", command=disconnect).pack(side="left", padx=6)
-        connect_button = ttk.Button(buttons, text="Connect & Save", style="Accent.TButton", command=connect)
-        connect_button.pack(side="right")
-        ttk.Button(buttons, text="Close", style="Nexa.TButton", command=window.destroy).pack(side="right", padx=6)
-        key_entry.focus_set()
-
     def _load_response_preference(self) -> str:
         try:
             payload = json.loads(self.preferences_path.read_text(encoding="utf-8"))
@@ -680,7 +557,6 @@ class NexaDesktop:
             payload = {
                 "theme": self.theme_name,
                 "response_profile": getattr(self, "response_profile", "Quick"),
-                "ai_choice": getattr(self, "ai_choice", DEFAULT_AI_CHOICE),
             }
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -779,22 +655,41 @@ class NexaDesktop:
         except Exception as exc:
             messagebox.showerror("Plugin import failed", str(exc))
 
+    def _fit_message_widget(self, widget) -> None:
+        """Recalculate wrapped height only after Tk has assigned the actual width."""
+        try:
+            if not widget.winfo_exists():
+                return
+            display_lines = widget.count("1.0", "end-1c", "displaylines")
+            line_count = max(1, int(display_lines[0])) if display_lines else 1
+            if int(widget.cget("height")) != line_count:
+                widget.configure(height=line_count)
+        except (IndexError, TypeError, ValueError, tk.TclError):
+            pass
+
+    def _schedule_message_fit(self, widget) -> None:
+        try:
+            self.root.after_idle(self._fit_message_widget, widget)
+        except tk.TclError:
+            pass
+
     def _make_message_text(self, parent, text: str, background: str, foreground: str, width: int, padx: int, pady: int):
-        widget = tk.Text(parent, wrap="word", bg=background, fg=foreground, insertbackground=foreground, relief="flat", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10), width=width, height=1, padx=padx, pady=pady, spacing1=4, spacing3=5, undo=False)
+        widget = tk.Text(
+            parent, wrap="word", bg=background, fg=foreground,
+            insertbackground=foreground, relief="flat", borderwidth=0,
+            highlightthickness=0, font=("Segoe UI", 10), width=width,
+            height=1, padx=padx, pady=pady, spacing1=4, spacing3=5,
+            undo=False, exportselection=True,
+        )
         widget.tag_configure("codeblock", background=self.PANEL_2, foreground=self.TEXT, lmargin1=10, lmargin2=10, rmargin=10, spacing1=5, spacing3=5)
         widget.tag_configure("heading", foreground=self.ACCENT, font=("Segoe UI Semibold", 11))
         if text:
             widget.insert("1.0", text)
         widget.configure(state="disabled")
         widget.pack(fill="x", expand=True)
-        widget.update_idletasks()
-        try:
-            display_lines = widget.count("1.0", "end-1c", "displaylines")
-            line_count = max(1, int(display_lines[0])) if display_lines else 1
-        except (IndexError, TypeError, tk.TclError):
-            line_count = max(1, text.count("\n") + 1)
-        widget.configure(height=line_count)
         widget.bind("<MouseWheel>", self._on_chat_mousewheel)
+        widget.bind("<Configure>", lambda _event, target=widget: self._schedule_message_fit(target), add="+")
+        self._schedule_message_fit(widget)
         return widget
 
     def _append_message(self, name: str, text: str, role: str) -> None:
@@ -805,7 +700,7 @@ class NexaDesktop:
         canvas_width = max(560, self.chat_canvas.winfo_width())
         content_width = min(920, max(420, canvas_width - 56))
         side_pad = max(20, (canvas_width - content_width) // 2)
-        text_width = max(42, min(108, int((content_width - 52) / 8)))
+        text_width = max(42, min(86, int((content_width - 112) / 8)))
         row = tk.Frame(self.chat_feed, bg=self.BG)
         row.pack(fill="x", padx=side_pad, pady=(15, 9))
 
@@ -855,19 +750,26 @@ class NexaDesktop:
             bg=self.BG, fg=self.MUTED, activebackground=self.PANEL_2,
             activeforeground=self.TEXT, relief="flat", borderwidth=0,
             font=("Segoe UI", 8), padx=9, pady=4, cursor="hand2",
-            state="normal" if text else "disabled",
+            state="normal" if text and text != "Thinking…" else "disabled",
         )
         copy_button.pack(side="left")
 
-        if not text:
+        if text == "Thinking…":
             self.current_assistant_widget = message_widget
             self.current_assistant_row = row
             self.current_assistant_copy_button = copy_button
+            self.assistant_placeholder = True
+        elif not text:
+            self.current_assistant_widget = message_widget
+            self.current_assistant_row = row
+            self.current_assistant_copy_button = copy_button
+            self.assistant_placeholder = False
         else:
             self._format_message_widget(message_widget)
             self.current_assistant_widget = None
             self.current_assistant_row = None
             self.current_assistant_copy_button = None
+            self.assistant_placeholder = False
         self._scroll_chat_to_bottom()
 
     def _copy_message_text(self, widget) -> None:
@@ -921,12 +823,36 @@ class NexaDesktop:
             return
         try:
             widget.configure(state="normal")
+            if self.assistant_placeholder:
+                widget.delete("1.0", "end")
+                self.assistant_placeholder = False
             widget.insert("end", text)
-            widget.update_idletasks()
-            display_lines = widget.count("1.0", "end-1c", "displaylines")
-            line_count = max(1, int(display_lines[0])) if display_lines else 1
-            widget.configure(height=line_count, state="disabled")
-            self._scroll_chat_to_bottom()
+            widget.configure(state="disabled")
+            self._schedule_message_fit(widget)
+            self.root.after_idle(self._scroll_chat_to_bottom)
+        except tk.TclError:
+            self.current_assistant_widget = None
+
+    def _set_assistant_message(self, text: str) -> None:
+        """Re-render the authoritative complete response after token streaming."""
+        widget = self.current_assistant_widget
+        if widget is None or not widget.winfo_exists():
+            self._append_message("Nexa AI", text, "assistant")
+            return
+        try:
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            widget.insert("1.0", text)
+            widget.configure(state="disabled")
+            self._format_message_widget(widget)
+            self._schedule_message_fit(widget)
+            if self.current_assistant_copy_button is not None:
+                self.current_assistant_copy_button.configure(state="normal")
+            self.current_assistant_widget = None
+            self.current_assistant_row = None
+            self.current_assistant_copy_button = None
+            self.assistant_placeholder = False
+            self.root.after_idle(self._scroll_chat_to_bottom)
         except tk.TclError:
             self.current_assistant_widget = None
 
@@ -950,8 +876,8 @@ class NexaDesktop:
             self.ollama_runtime.ensure_server(self.log_handle)
             self.log_handle.write("Ollama local API is ready.\n")
 
-            # Start local file services before the model pull. Gemini can chat
-            # and attach local files while Qwen is still downloading.
+            # Start local file services before the model pull so attachments
+            # are ready when the offline model finishes starting.
             if self.api_server is None:
                 from nexa_ai.config import settings
                 import uvicorn
@@ -1010,7 +936,7 @@ class NexaDesktop:
                 flush_stream()
                 if kind == "ready":
                     self.ready = True
-                    self.status_var.set("● Offline Qwen ready" if self.ai_provider == "local" else f"{self.current_model_name} connected · online chat ready")
+                    self.status_var.set("● Offline Qwen ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._update_send_button()
                     self.root.after(80, self.show_chat_workspace)
@@ -1019,26 +945,6 @@ class NexaDesktop:
                     self.status_var.set("Local file service ready · " + self.current_model_name)
                 elif kind == "history_updated":
                     self._refresh_recent_conversations()
-                elif kind == "gemini_connected":
-                    try:
-                        payload["window"].destroy()
-                    except (tk.TclError, KeyError, TypeError):
-                        pass
-                    choice = self.pending_ai_choice or "Gemini 3.8 Flash · Online"
-                    if choice not in AI_CHOICES or AI_CHOICES[choice][0] != "gemini":
-                        choice = "Gemini 3.8 Flash · Online"
-                    self.pending_ai_choice = None
-                    self._apply_ai_choice(choice)
-                    self.status_var.set("Gemini connected · ready for online chat")
-                    self.status_label.configure(fg="#73d6a4")
-                    self._update_send_button()
-                elif kind == "gemini_connect_error":
-                    try:
-                        payload["button"].configure(state="normal", text="Connect & Save")
-                        payload["window"].title("Nexa AI · Gemini connection failed")
-                    except (tk.TclError, KeyError, TypeError):
-                        pass
-                    messagebox.showerror("Gemini connection failed", str(payload.get("message", "Could not connect to Gemini.")))
                 elif kind == "model_download_status":
                     self.status_var.set(str(payload))
                     self.status_label.configure(fg=self.ACCENT)
@@ -1063,12 +969,12 @@ class NexaDesktop:
                     )
                 elif kind == "boot_error":
                     self.ready = False
-                    self.status_var.set("Offline engine unavailable · Gemini can still chat")
+                    self.status_var.set("Offline engine failed to start")
                     self._update_send_button()
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showwarning(
                         "Offline Qwen unavailable",
-                        "The offline Qwen engine could not start. Connected Gemini chat is still available.\n\n" + str(payload),
+                        "The offline Qwen engine could not start.\n\n" + str(payload),
                     )
                 elif kind == "first_token":
                     self.status_var.set("Writing answer…")
@@ -1076,9 +982,8 @@ class NexaDesktop:
                 elif kind == "done":
                     self.busy = False
                     self._update_send_button()
-                    self.status_var.set("● Gemini online ready" if self.active_request_provider == "gemini" else "● Offline Qwen ready")
+                    self.status_var.set("● Offline Qwen ready")
                     self.status_label.configure(fg="#73d6a4")
-                    self.ai_selector.configure(state="readonly")
                     self._finish_assistant_message()
                     self._scroll_chat_to_bottom()
                     if self.pending_send_queue:
@@ -1088,15 +993,19 @@ class NexaDesktop:
                         self.voice_turn = False
                         if self.speak_replies_var.get() and self.messages and self.messages[-1].get("role") == "assistant":
                             self._speak_text(str(self.messages[-1].get("content", "")))
+                elif kind == "assistant_complete":
+                    self._set_assistant_message(str(payload))
                 elif kind == "request_error":
                     self.busy = False
                     self._update_send_button()
-                    self.status_var.set("Request failed")
+                    self.status_var.set("Offline response failed")
                     self.status_label.configure(fg="#ff8d8d")
-                    self.ai_selector.configure(state="readonly")
                     self.voice_turn = False
-                    self._remove_empty_assistant_row()
-                    self._append_message("Nexa AI", f"I couldn't complete that request.\n\n{payload}", "assistant")
+                    error_text = f"I couldn't complete that request.\n\n{payload}"
+                    self._set_assistant_message(error_text)
+                    if self.messages and self.messages[-1].get("role") == "user":
+                        self.messages.append({"role": "assistant", "content": error_text})
+                        self._save_chat()
                     if self.pending_send_queue:
                         self.root.after(300, self._send_next_queued)
                 elif kind == "attached":
@@ -1142,7 +1051,7 @@ class NexaDesktop:
         self.attachments_label.configure(text=("Attached: " + "  ·  ".join(names)) if names else "")
 
     def attach_file(self) -> None:
-        if self.uploading or self.busy or not self._provider_ready():
+        if self.uploading or self.busy or not self.ready:
             return
         if not self.file_api_ready:
             self.status_var.set("Local attachment service is still starting…")
@@ -1185,12 +1094,8 @@ class NexaDesktop:
         if not text and not self.pending_files:
             return
 
-        if self.ai_provider == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
-            self.pending_ai_choice = self.ai_choice
-            self.open_gemini_settings()
-            return
-        if not self._provider_ready():
-            self.status_var.set("Offline Qwen is still starting. Select connected Gemini to chat now.")
+        if not self.ready:
+            self.status_var.set("Offline Qwen is still starting. Please wait until the model is ready.")
             self._update_send_button()
             return
 
@@ -1209,11 +1114,7 @@ class NexaDesktop:
             self.status_var.set(f"Follow-up queued · {len(self.pending_send_queue)} waiting")
             return
 
-        provider, model_id = self.ai_provider, self.current_model_id
-        if provider == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
-            self.pending_ai_choice = self.ai_choice
-            self.open_gemini_settings()
-            return
+        model_id = self.current_model_id
         self.input.delete("1.0", "end")
         self.input_placeholder_active = False
         self.input.configure(fg=self.TEXT)
@@ -1235,14 +1136,12 @@ class NexaDesktop:
         if attachments:
             visible_text += "\n\n" + "\n".join(f"📎 {x.get('filename', 'file')}" for x in attachments)
         self._append_message("You", visible_text, "user")
-        self._append_message("Nexa AI", "", "assistant")
+        self._append_message("Nexa AI", "Thinking…", "assistant")
         max_tokens = response_token_limit(self.response_profile_var.get())
-        self.active_request_provider = provider
-        self.ai_selector.configure(state="disabled")
-        threading.Thread(target=self._stream_request, args=(max_tokens, provider, model_id), daemon=True, name="NexaResponse").start()
+        threading.Thread(target=self._stream_request, args=(max_tokens, model_id), daemon=True, name="NexaResponse").start()
 
     def _send_next_queued(self) -> None:
-        if not self._provider_ready() or self.busy or not self.pending_send_queue:
+        if not self.ready or self.busy or not self.pending_send_queue:
             return
         next_text = take_followup(self.pending_send_queue)
         if next_text is None:
@@ -1253,73 +1152,65 @@ class NexaDesktop:
         self.input.configure(fg=self.TEXT)
         self.send_message()
 
-    def _stream_request(self, max_tokens: int = 768, provider: str = "local", model_id: str | None = None) -> None:
+    def _stream_request(self, max_tokens: int = 1024, model_id: str | None = None) -> None:
         answer: list[str] = []
         selected_model = model_id or self.current_model_id
 
         def emit_piece(piece: str) -> None:
-            if not piece:
-                return
-            if not answer:
-                self.events.put(("first_token", None))
-            answer.append(piece)
-            self.events.put(("stream", piece))
+            if piece:
+                answer.append(piece)
+                self.events.put(("stream", piece))
 
         try:
             messages = build_chat_context(self.messages, max_recent_messages=12)
-            if provider == "gemini":
-                api_key = self.secret_store.get_secret("gemini_api_key")
-                if not api_key:
-                    raise RuntimeError("Gemini is not connected. Switch to offline Qwen or connect Gemini.")
-                for piece in stream_gemini(messages, api_key, selected_model, temperature=0.55, max_tokens=int(max_tokens)):
-                    emit_piece(str(piece))
-            else:
-                payload = {
-                    "model": selected_model,
-                    "messages": messages,
-                    "stream": True,
-                    "temperature": 0.55,
-                    "max_tokens": int(max_tokens),
-                }
-                with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
-                    with client.stream("POST", f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload) as response:
-                        if response.is_error:
-                            try:
-                                body = response.json()
-                                detail = body.get("error", {}).get("message", str(body))
-                            except Exception:
-                                detail = response.text[:800]
-                            raise RuntimeError(detail)
-                        for line in response.iter_lines():
-                            if not line or not line.startswith("data:"):
-                                continue
-                            raw = line[5:].strip()
-                            if raw == "[DONE]":
-                                break
-                            try:
-                                item = json.loads(raw)
-                            except json.JSONDecodeError:
-                                continue
-                            if "error" in item:
-                                err = item["error"]
-                                raise RuntimeError(err.get("message", str(err)) if isinstance(err, dict) else str(err))
-                            choices = item.get("choices") or []
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                piece = delta.get("content", "")
-                                if isinstance(piece, list):
-                                    piece = "".join(str(part.get("text", "")) for part in piece if isinstance(part, dict))
-                                emit_piece(str(piece) if piece else "")
+            payload = {
+                "model": selected_model,
+                "messages": messages,
+                "stream": True,
+                "temperature": 0.45,
+                "max_tokens": int(max_tokens),
+            }
+            with httpx.Client(timeout=httpx.Timeout(900, connect=10, read=180)) as client:
+                with client.stream(
+                    "POST", f"http://127.0.0.1:{API_PORT}/v1/chat/completions",
+                    json=payload,
+                ) as response:
+                    if response.is_error:
+                        try:
+                            body = response.json()
+                            detail = body.get("error", {}).get("message", str(body))
+                        except Exception:
+                            detail = response.text[:800]
+                        raise RuntimeError(detail)
+                    for line in response.iter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        raw = line[5:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            item = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        if "error" in item:
+                            err = item["error"]
+                            raise RuntimeError(err.get("message", str(err)) if isinstance(err, dict) else str(err))
+                        choices = item.get("choices") or []
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            piece = delta.get("content", "")
+                            if isinstance(piece, list):
+                                piece = "".join(str(part.get("text", "")) for part in piece if isinstance(part, dict))
+                            emit_piece(str(piece) if piece else "")
 
             final_answer = "".join(answer).strip()
             if not final_answer:
-                raise RuntimeError("The selected AI provider returned no visible answer. Check its status and try again.")
+                raise RuntimeError("Qwen returned an empty response. Try a shorter prompt or restart the offline engine.")
             self.messages.append({"role": "assistant", "content": final_answer})
             self._save_chat()
+            self.events.put(("assistant_complete", final_answer))
             self.events.put(("done", None))
         except Exception as exc:
-            if self.messages and self.messages[-1].get("role") == "user":
-                self.messages.pop()
             self.events.put(("request_error", str(exc)))
 
     def _save_chat(self) -> None:
@@ -1451,7 +1342,7 @@ class NexaDesktop:
         self.show_chat_workspace()
 
     def toggle_voice_chat(self) -> None:
-        if not self._provider_ready() or self.busy or self.uploading:
+        if not self.ready or self.busy or self.uploading:
             return
         if self.recording:
             self._stop_voice_recording()
@@ -1671,14 +1562,10 @@ class NexaDesktop:
             output.configure(state="disabled")
 
         def generate() -> None:
-            if not self._provider_ready() or self.busy:
-                messagebox.showwarning("AI provider not ready", "Wait until the selected AI provider is ready before generating a workflow.", parent=window)
+            if not self.ready or self.busy:
+                messagebox.showwarning("Offline model not ready", "Wait until Qwen2.5-Coder 3B is ready before generating a workflow.", parent=window)
                 return
-            model_provider, model_id, model_name = self.ai_provider, self.current_model_id, self.current_model_name
-            if model_provider == "gemini" and not self.secret_store.has_secret("gemini_api_key"):
-                self.pending_ai_choice = self.ai_choice
-                self.open_gemini_settings()
-                return
+            model_id, model_name = self.current_model_id, self.current_model_name
             requirement = prompt_box.get("1.0", "end-1c").strip()
             try:
                 messages = build_n8n_messages(requirement)
@@ -1688,29 +1575,23 @@ class NexaDesktop:
             generate_button.configure(state="disabled", text="Generating…")
             export_button.configure(state="disabled")
             copy_button.configure(state="disabled")
-            status.configure(text=f"Generating with {model_name} · {model_provider}…", fg=self.ACCENT)
+            status.configure(text=f"Generating with offline {model_name}…", fg=self.ACCENT)
             result_state["workflow"] = None
 
             def worker() -> None:
                 try:
-                    if model_provider == "gemini":
-                        api_key = self.secret_store.get_secret("gemini_api_key")
-                        if not api_key:
-                            raise RuntimeError("Connect Gemini in the AI engine panel first.")
-                        raw = "".join(stream_gemini(messages, api_key, model_id, temperature=0.15, max_tokens=4096))
-                    else:
-                        payload = {
-                            "model": model_id,
-                            "messages": messages,
-                            "stream": False,
-                            "temperature": 0.15,
-                            "max_tokens": 4096,
-                        }
-                        with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
-                            response = client.post(f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload)
-                        response.raise_for_status()
-                        data = response.json()
-                        raw = data["choices"][0]["message"]["content"]
+                    payload = {
+                        "model": model_id,
+                        "messages": messages,
+                        "stream": False,
+                        "temperature": 0.15,
+                        "max_tokens": 4096,
+                    }
+                    with httpx.Client(timeout=httpx.Timeout(900, connect=10)) as client:
+                        response = client.post(f"http://127.0.0.1:{API_PORT}/v1/chat/completions", json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    raw = data["choices"][0]["message"]["content"]
                     workflow = extract_n8n_json(raw)
                     rendered = workflow_json_text(workflow)
                     self.root.after(0, lambda: finish_success(workflow, rendered))

@@ -24,36 +24,28 @@ NexaAI is a Windows desktop application. The NexaAI installer includes the Ollam
    Model weights are fetched by the bundled Ollama runtime on first launch and stored
    under the current Windows user's NexaAI engine folder.
 
-3. Google Gemini API (optional online service)
-   Documentation: https://ai.google.dev/gemini-api/docs
-   Models: Gemini 3.8 Flash (gemini-3.8-flash) and Gemini 3.5 Flash-Lite
-   (gemini-3.5-flash-lite), subject to current Google AI Studio availability and
-   free-tier limits. Gemini model weights are not redistributed by NexaAI.
-   Users provide their own Google AI Studio API key. NexaAI stores it encrypted
-   using Windows DPAPI for the current Windows user.
-
-4. Python dependencies
+3. Python dependencies
    FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,
    NumPy, faster-whisper, CTranslate2, av, sounddevice, PortAudio, pyttsx3,
    comtypes and imageio-ffmpeg retain their respective upstream licenses.
    See each upstream project for license terms.
 
-5. Whisper base speech-recognition model (downloaded on first Voice Chat use)
+4. Whisper base speech-recognition model (downloaded on first Voice Chat use)
    Project: https://github.com/openai/whisper
    License: MIT (see upstream project/model distribution).
    This is a speech-to-text component for voice input, not another chat LLM.
 
-6. imageio-ffmpeg
+5. imageio-ffmpeg
    Project: https://github.com/imageio/imageio-ffmpeg
    License: BSD 2-Clause.
    FFmpeg's own license depends on the options enabled in the binary; see
    https://ffmpeg.org/legal.html and the upstream build metadata.
 
-7. Windows SAPI voices
+6. Windows SAPI voices
    NexaAI uses Windows speech voices already installed by the user. No voice is
    redistributed by NexaAI.
 
-8. Pillow
+7. Pillow
    Project: https://python-pillow.org/
    License: HPND. Used only in the Windows build pipeline to create application
    and installer icons; Pillow is not bundled with NexaAI.
