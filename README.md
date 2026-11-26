@@ -1,33 +1,36 @@
-# NexaAI 2.1.0 — NTech Edition · Offline Qwen + Online Gemini
+# NexaAI 2.1.1 — NTech Edition · Offline Qwen2.5-Coder 3B + Online Gemini
 
-NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. Its default offline coding model is Qwen2.5-Coder 1.5B, served by the Ollama runtime bundled with the installer. Gemini 3.8 Flash and Gemini 3.1 Flash-Lite are optional online choices.
+NexaAI is a Windows x64 desktop assistant for Bengali/English chat, coding help, n8n workflow design, local chat history and voice. Its default offline coding model is Qwen2.5-Coder 3B, served by the Ollama runtime bundled with the installer. Gemini 3.8 Flash and Gemini 3.5 Flash-Lite are optional online choices.
 
 ## Install
 
-1. Download and run **NexaAI-Setup-2.1.0-Windows-x64.exe**.
+1. Download and run **NexaAI-Setup-2.1.1-Windows-x64.exe**.
 2. The installer copies NexaAI and its bundled Ollama runtime.
-3. On first launch, NexaAI automatically downloads Qwen2.5-Coder 1.5B (about 986 MB) and shows download progress, speed and ETA.
-4. After the model is installed, offline chat and coding assistance work without an internet connection.
+3. Review and accept the Qwen Research License in the installer. Its 3B model is licensed for non-commercial research and evaluation only.
+4. On first launch, NexaAI automatically downloads Qwen2.5-Coder 3B (about 1.9 GB) and shows download progress, speed and ETA.
+5. After the model is installed, offline chat and coding assistance work without an internet connection.
 
-The initial model download requires internet. Keep about 2 GB of free storage for the model and runtime. No separate Ollama installation or administrator permission is needed. NexaAI installs for the current Windows user.
+The initial model download requires internet. Keep at least 3 GB free for the model and runtime. No separate Ollama installation or administrator permission is needed. NexaAI installs for the current Windows user.
 
 ## AI engines
 
-**Offline — Qwen2.5-Coder 1.5B (Ollama tag: `qwen2.5-coder:1.5b`)**
+**Offline — Qwen2.5-Coder 3B (Ollama tag: `qwen2.5-coder:3b`)**
 
-- Approximately 986 MB model download.
+- Approximately 1.9 GB model download.
 - Coding-focused generation, code reasoning and debugging.
 - Model files are stored under `%LOCALAPPDATA%\NexaAI\Engine\models`.
 - The bundled Ollama service listens only on the private loopback address `127.0.0.1:11439`.
-- Uses a conservative 4K context and CPU thread limit for low-memory Windows PCs.
+- Uses a conservative 4K context and CPU thread limit for lower-memory Windows PCs.
 - Once downloaded, Qwen works offline and needs no account, cloud provider or API key.
+
+**Important model licence:** Qwen2.5-Coder 3B is provided under the Qwen Research License, not Apache 2.0. The license defines non-commercial use as research or evaluation only. Commercial use requires a separate license from Alibaba Cloud. The complete agreement and required attribution notice are included in the installer and installed app.
 
 **Online — Google Gemini**
 
 - Gemini 3.8 Flash for general reasoning and coding.
-- Gemini 3.1 Flash-Lite as a faster, lighter online alternative.
+- Gemini 3.5 Flash-Lite as a faster, lighter online alternative.
 - Requires the user's own Google AI Studio API key. The key is checked before saving and encrypted with Windows DPAPI for the current Windows user.
-- Free-tier access, availability and request quotas are controlled by Google and can change. Google says prompts submitted on the free tier may be used to improve its products; avoid sending sensitive code, credentials or private information when using free-tier Gemini.
+- Google free-tier availability and request quotas can change. Google says free-tier prompts may be used to improve its products; avoid sending sensitive code, credentials or private information when using free-tier Gemini.
 
 ## Privacy
 
@@ -41,7 +44,7 @@ The initial model download requires internet. Keep about 2 GB of free storage fo
 ## Chat workspace
 
 - Refreshed NTech dark interface and premium-themed dropdowns.
-- AI selector for offline Qwen2.5-Coder and online Gemini models.
+- AI selector for offline Qwen2.5-Coder 3B and online Gemini models.
 - Local chat history, recent chats, conversation search and plugin manager.
 - Streaming responses and up to four queued follow-up prompts.
 - Quick, Balanced and Detailed response profiles.
@@ -66,10 +69,10 @@ Describe an automation in Bangla or English. The selected AI generates n8n workf
 
 ## Build from source
 
-The GitHub Actions workflow **Build Nexa AI Windows Offline Installer** downloads and verifies the official Ollama Windows standalone runtime, prepares Qwen2.5-Coder's Apache 2.0 license notice, runs the unit tests, compiles the desktop app and produces one Windows x64 installer.
+The GitHub Actions workflow **Build Nexa AI 2.1.1 Windows Offline Qwen 3B + Gemini Installer** downloads and verifies the official Ollama Windows standalone runtime, obtains the official Qwen Research License and attribution notice, runs the unit tests, compiles the desktop app and produces one Windows x64 installer.
 
 Run the optional local runtime smoke test after NexaAI has started its bundled Ollama service:
 
     python tools/smoke_test_runtime.py
 
-See `THIRD-PARTY-NOTICES.txt` for third-party software and model license information.
+See `THIRD-PARTY-NOTICES.txt` and `licenses/QWEN-RESEARCH-LICENSE.txt` for third-party software and model license information.

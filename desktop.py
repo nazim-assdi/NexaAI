@@ -31,13 +31,13 @@ from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 MODEL_ID = OLLAMA_MODEL
-DEFAULT_AI_CHOICE = "Qwen2.5-Coder 1.5B · Offline"
+DEFAULT_AI_CHOICE = "Qwen2.5-Coder 3B · Offline"
 AI_CHOICES = {
     DEFAULT_AI_CHOICE: ("local", OLLAMA_MODEL, OLLAMA_MODEL_NAME),
     "Gemini 3.8 Flash · Online": ("gemini", "gemini-3.8-flash", "Gemini 3.8 Flash"),
-    "Gemini 3.1 Flash-Lite · Online": ("gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+    "Gemini 3.5 Flash-Lite · Online": ("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
 }
 LOCAL_MODEL_PORT = 11439
 API_PORT = 8000
@@ -172,7 +172,7 @@ class NexaDesktop:
         self.whisper_model = None
         self._build_ui()
 
-        self.status_var.set("Preparing Qwen2.5-Coder 1.5B · checking Ollama…")
+        self.status_var.set("Preparing Qwen2.5-Coder 3B · checking Ollama…")
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaBoot").start()
         self.root.after(100, self._poll_events)
 
@@ -235,7 +235,7 @@ class NexaDesktop:
         top.pack(fill="x")
         top.pack_propagate(False)
         tk.Label(top, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 13)).pack(side="left", padx=(24, 10))
-        self.model_badge = tk.Label(top, text="QWEN2.5-CODER 1.5B · OFFLINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=6)
+        self.model_badge = tk.Label(top, text="QWEN2.5-CODER 3B · OFFLINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=6)
         self.model_badge.pack(side="left", padx=(0, 6))
         self.status_var = tk.StringVar(value="Starting local engine…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
@@ -875,7 +875,7 @@ class NexaDesktop:
                     self.events.put(("model_download_progress", (completed, total, speed)))
 
             if OLLAMA_MODEL not in self.ollama_runtime.installed_models():
-                self.events.put(("model_download_status", f"Installing missing Qwen2.5-Coder 1.5B · {OLLAMA_MODEL_SIZE}"))
+                self.events.put(("model_download_status", f"Installing missing Qwen2.5-Coder 3B · {OLLAMA_MODEL_SIZE}"))
             self.ollama_runtime.ensure_model(report_progress)
             self.log_handle.write(f"Local model ready: {OLLAMA_MODEL}\n")
 
@@ -961,9 +961,9 @@ class NexaDesktop:
                         percent = done * 100 / total
                         remaining = max(0, total - done)
                         eta = f" · ETA {remaining / speed:.0f}s" if speed > 0 else ""
-                        self.status_var.set(f"Downloading Qwen2.5-Coder 1.5B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
+                        self.status_var.set(f"Downloading Qwen2.5-Coder 3B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
                     else:
-                        self.status_var.set(f"Downloading Qwen2.5-Coder 1.5B · {done / (1024 ** 2):.0f} MB · {rate}")
+                        self.status_var.set(f"Downloading Qwen2.5-Coder 3B · {done / (1024 ** 2):.0f} MB · {rate}")
                     self.status_label.configure(fg=self.ACCENT)
                 elif kind == "ollama_missing":
                     self.status_var.set("Bundled AI engine missing")

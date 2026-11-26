@@ -14,7 +14,7 @@ from .file_store import file_store
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODELS = {
     "gemini-3.8-flash": "Gemini 3.8 Flash",
-    "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite",
+    "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
 }
 MAX_INLINE_FILE_BYTES = 15 * 1024 * 1024
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".py", ".js", ".html", ".css", ".log"}

@@ -9,7 +9,7 @@ class GeminiBackendTests(unittest.TestCase):
     def test_only_current_gemini_flash_models_are_selectable(self):
         self.assertEqual(
             set(GEMINI_MODELS),
-            {"gemini-3.8-flash", "gemini-3.1-flash-lite"},
+            {"gemini-3.8-flash", "gemini-3.5-flash-lite"},
         )
 
     def test_gemini_request_translates_chat_roles_and_system_instruction(self):

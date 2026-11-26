@@ -1,4 +1,4 @@
-name: Build Nexa AI Windows Offline Installer
+name: Build Nexa AI 2.1.1 Windows Offline Qwen 3B + Gemini Installer
 
 concurrency:
   group: nexa-ai-windows-installer-${{ github.ref }}
@@ -74,7 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "The bundled Ollama CLI failed its version check." }
 
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ollama/ollama/v0.11.10/LICENSE" -OutFile (Join-Path $ollamaDir "LICENSE")
-          Write-Host "Verified embedded Ollama CLI. Qwen2.5-Coder 1.5B is downloaded automatically by NexaAI on first launch with visible progress."
+          Write-Host "Verified embedded Ollama CLI. Qwen2.5-Coder 3B is downloaded automatically by NexaAI on first launch with visible progress."
 
       - name: Build self-contained desktop application
         shell: pwsh
@@ -108,16 +108,18 @@ jobs:
           if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
           if (-not (Test-Path "build-assets\ollama\ollama.exe")) { throw "Bundled Ollama executable is missing." }
 
-      - name: Prepare Qwen2.5-Coder Apache 2.0 model license
+      - name: Prepare Qwen Research License and required attribution notice
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $licenseDir = Join-Path $PWD "licenses"
           New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
-          $modelLicense = Join-Path $licenseDir "QWEN2.5-CODER-LICENSE.txt"
-          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B/resolve/main/LICENSE" -OutFile $modelLicense
-          if ((Get-Item $modelLicense).Length -lt 8000) { throw "The Qwen2.5-Coder Apache 2.0 license download looks incomplete." }
-          Write-Host "Prepared the Qwen2.5-Coder Apache 2.0 model license."
+          $modelLicense = Join-Path $licenseDir "QWEN-RESEARCH-LICENSE.txt"
+          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-Coder-3B/resolve/main/LICENSE" -OutFile $modelLicense
+          if ((Get-Item $modelLicense).Length -lt 6000) { throw "The Qwen Research License download looks incomplete." }
+          $modelNotice = Join-Path $licenseDir "QWEN-NOTICE.txt"
+          Set-Content -Path $modelNotice -Value "Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) Alibaba Cloud. All Rights Reserved." -Encoding utf8
+          Write-Host "Prepared the Qwen Research License and required attribution notice."
 
       - name: Install Inno Setup
         shell: pwsh
@@ -169,14 +171,14 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v2.1.0
-          name: Nexa AI Desktop v2.1.0 — Qwen2.5-Coder Offline + Gemini Online
+          tag_name: desktop-v2.1.1
+          name: Nexa AI Desktop v2.1.1 — Qwen2.5-Coder Offline + Gemini Online
           body: |
-            NexaAI 2.1.0 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 1.5B (about 986 MB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, chat works offline.
+            NexaAI 2.1.1 is a fully offline Windows x64 assistant. The single setup installer includes the Ollama standalone runtime. On first launch, NexaAI automatically downloads Google Qwen2.5-Coder 3B (about 1.9 GB) into its private model folder and displays download progress. There is no separate Ollama installation. Online Gemini requires the user’s optional Google AI Studio API key, encrypted with Windows DPAPI. After the model download is complete, offline chat works without a network connection. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
 
             The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
 
-            The refreshed interface includes an offline/online model selector and premium themed dropdowns, a cleaner offline model badge, a more spacious navigation panel, local chat history, follow-up queue, quick/balanced/detailed response profiles, voice tools, plugin manager and n8n Workflow Studio. Qwen2.5-Coder 1.5B is compact and CPU-friendly, but less capable than larger models on complex multi-file coding tasks.
+            The refreshed interface includes an offline/online model selector and premium themed dropdowns, a cleaner offline model badge, a more spacious navigation panel, local chat history, follow-up queue, quick/balanced/detailed response profiles, voice tools, plugin manager and n8n Workflow Studio. Qwen2.5-Coder 3B downloads about 1.9 GB. It is licensed for non-commercial research/evaluation only under the Qwen Research License; commercial use requires a separate license from Alibaba Cloud.
           files: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt

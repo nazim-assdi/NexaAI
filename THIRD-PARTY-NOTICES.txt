@@ -1,4 +1,4 @@
-NexaAI is a Windows desktop application. The NexaAI installer includes the Ollama Windows runtime. Qwen2.5-Coder model weights are downloaded from the Ollama model registry on first launch.
+NexaAI is a Windows desktop application. The NexaAI installer includes the Ollama Windows runtime. Qwen2.5-Coder 3B model weights are downloaded from the Ollama model registry on first launch.
 
 1. Ollama Windows standalone runtime
    Project: https://github.com/ollama/ollama
@@ -9,20 +9,25 @@ NexaAI is a Windows desktop application. The NexaAI installer includes the Ollam
    NexaAI starts Ollama as a local process and connects only to its app-specific loopback
    API at 127.0.0.1:11439.
 
-2. Qwen2.5-Coder 1.5B
+2. Qwen2.5-Coder 3B
    Project: https://github.com/QwenLM/Qwen2.5-Coder
-   Model library: https://ollama.com/library/qwen2.5-coder
-   Ollama tag: qwen2.5-coder:1.5b
-   Approximate download: 986 MB
-   Model license: Apache License 2.0.
-   License text is bundled with the NexaAI application. Model weights are downloaded
-   automatically by the bundled Ollama runtime on first launch and stored under the
-   current Windows user's NexaAI engine folder.
+   Official model card: https://huggingface.co/Qwen/Qwen2.5-Coder-3B
+   Ollama model library: https://ollama.com/library/qwen2.5-coder
+   Ollama tag: qwen2.5-coder:3b
+   Approximate Ollama download: 1.9 GB
+   License: Qwen Research License Agreement (September 19, 2024), not Apache 2.0.
+   The license permits non-commercial use for research or evaluation only. Commercial
+   use requires a separate license from Alibaba Cloud. The complete agreement and
+   required attribution are included in the installer and installed app.
+   Required attribution notice:
+   "Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) Alibaba Cloud. All Rights Reserved."
+   Model weights are fetched by the bundled Ollama runtime on first launch and stored
+   under the current Windows user's NexaAI engine folder.
 
 3. Google Gemini API (optional online service)
    Documentation: https://ai.google.dev/gemini-api/docs
-   Models: Gemini 3.8 Flash (gemini-3.8-flash) and Gemini 3.1 Flash-Lite
-   (gemini-3.1-flash-lite), subject to current Google AI Studio availability and
+   Models: Gemini 3.8 Flash (gemini-3.8-flash) and Gemini 3.5 Flash-Lite
+   (gemini-3.5-flash-lite), subject to current Google AI Studio availability and
    free-tier limits. Gemini model weights are not redistributed by NexaAI.
    Users provide their own Google AI Studio API key. NexaAI stores it encrypted
    using Windows DPAPI for the current Windows user.

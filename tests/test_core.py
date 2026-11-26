@@ -39,9 +39,9 @@ class CoreTests(unittest.TestCase):
         messages = [{"role": "user", "content": "hello"}]
         self.assertEqual(prepare_messages(messages), messages)
 
-    def test_ollama_runtime_uses_qwen25_coder_15b(self):
-        self.assertEqual(OLLAMA_MODEL, "qwen2.5-coder:1.5b")
-        self.assertIn("986", OLLAMA_MODEL_SIZE)
+    def test_ollama_runtime_uses_qwen25_coder_3b(self):
+        self.assertEqual(OLLAMA_MODEL, "qwen2.5-coder:3b")
+        self.assertIn("1.9 GB", OLLAMA_MODEL_SIZE)
 
     def test_ollama_runtime_explains_missing_installation(self):
         runtime = OllamaRuntime()
@@ -63,7 +63,7 @@ class CoreTests(unittest.TestCase):
 
     def test_ollama_runtime_does_not_pull_an_already_installed_model(self):
         runtime = OllamaRuntime()
-        with patch.object(runtime, "installed_models", return_value=["qwen2.5-coder:1.5b"]):
+        with patch.object(runtime, "installed_models", return_value=["qwen2.5-coder:3b"]):
             runtime.ensure_model()
         self.assertFalse(runtime.started_by_nexa)
 
@@ -201,7 +201,7 @@ class CoreTests(unittest.TestCase):
                 {"role": "user", "content": "Build an n8n workflow"},
                 {"role": "assistant", "content": "Here is the plan."},
             ]
-            store.save(conversation_id, "n8n workflow", messages, "qwen2.5-coder:1.5b")
+            store.save(conversation_id, "n8n workflow", messages, "qwen2.5-coder:3b")
             items = store.list_conversations()
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0]["title"], "n8n workflow")
