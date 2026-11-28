@@ -14,7 +14,7 @@ from .config import settings
 from .file_store import file_store, guess_mime_type
 from . import local_backend
 
-app = FastAPI(title="Nexa AI Local API", version="2.1.3")
+app = FastAPI(title="Nexa AI Local API", version="2.2.0")
 
 
 class ChatRequest(BaseModel):
@@ -43,8 +43,8 @@ def health():
         detail = str(exc)
     return {
         "ok": True,
-        "service": "Nexa AI Local API",
-        "provider": "local",
+        "service": "Nexa AI Hybrid API",
+        "provider": "hybrid",
         "configured": configured,
         "detail": detail,
         "model": settings.model,
@@ -120,7 +120,7 @@ async def upload_file(file: UploadFile = File(...)):
     if not allowed:
         raise HTTPException(
             status_code=415,
-            detail="This edition supports Qwen2.5-Coder text/code files and online Gemini image attachments. Video attachments are not supported.",
+            detail="This edition supports text/code documents with the local Qwen2.5 1.5B model. Image and video understanding is not included.",
         )
 
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

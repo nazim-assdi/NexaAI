@@ -55,7 +55,7 @@ def list_models() -> list[dict[str, Any]]:
 
 def _require_vision_model() -> None:
     raise RuntimeError(
-        "Qwen2.5-Coder is a text-only offline model. Select an online Gemini model to analyse images."
+        "Qwen2.5 1.5B is a text-only model. Image and video analysis are not supported by this model."
     )
 
 
@@ -131,7 +131,7 @@ def _options(temperature: float | None, max_tokens: int | None) -> dict[str, Any
     }
 
 
-def generate_text(
+def _generate_local_text(
     messages: list[dict[str, Any]],
     model: str | None = None,
     temperature: float | None = None,
@@ -152,10 +152,58 @@ def generate_text(
     try:
         content = data["message"]["content"]
         if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("Qwen2.5-Coder 3B returned an empty assistant message.")
+            raise RuntimeError("Qwen2.5 1.5B returned an empty assistant message.")
         return content
     except (KeyError, TypeError) as exc:
         raise RuntimeError(f"Unexpected Ollama response: {json.dumps(data)[:800]}") from exc
+
+
+
+def _hf_token_and_mode() -> tuple[str | None, str]:
+    from .hf_secrets import load_hf_token
+    try:
+        token = load_hf_token()
+    except Exception:
+        token = None
+    mode = os.getenv("NEXA_HF_MODE", "Hybrid (Local first)").strip()
+    allowed = {"Hybrid (Local first)", "Hugging Face cloud first", "Local only"}
+    return token, mode if mode in allowed else "Hybrid (Local first)"
+
+
+def generate_text(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    token, mode = _hf_token_and_mode()
+    cloud_enabled = bool(token) and mode != "Local only"
+    cloud_model = os.getenv("NEXA_HF_MODEL") or None
+
+    if cloud_enabled and mode == "Hugging Face cloud first":
+        try:
+            from .huggingface_backend import generate_text as hf_generate_text
+            return hf_generate_text(prepare_messages(messages), token, temperature, max_tokens, cloud_model)
+        except Exception as cloud_error:
+            try:
+                return _generate_local_text(messages, model, temperature, max_tokens)
+            except Exception as local_error:
+                raise RuntimeError(
+                    f"Hugging Face cloud failed: {cloud_error}\nLocal model fallback failed: {local_error}"
+                ) from local_error
+
+    try:
+        return _generate_local_text(messages, model, temperature, max_tokens)
+    except Exception as local_error:
+        if not cloud_enabled:
+            raise
+        from .huggingface_backend import generate_text as hf_generate_text
+        try:
+            return hf_generate_text(prepare_messages(messages), token, temperature, max_tokens, cloud_model)
+        except Exception as cloud_error:
+            raise RuntimeError(
+                f"Local model failed: {local_error}\nHugging Face fallback failed: {cloud_error}"
+            ) from cloud_error
 
 
 def parse_ollama_stream_chunk(raw: str) -> tuple[str, bool]:
@@ -170,7 +218,7 @@ def parse_ollama_stream_chunk(raw: str) -> tuple[str, bool]:
     content = message.get("content", "")
     return (content if isinstance(content, str) else ""), bool(item.get("done"))
 
-def stream_text(
+def _stream_local_text(
     messages: list[dict[str, Any]],
     model: str | None = None,
     temperature: float | None = None,
@@ -195,3 +243,67 @@ def stream_text(
                     yield text
                 if done:
                     break
+
+def stream_text(
+    messages: list[dict[str, Any]],
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> Iterator[str]:
+    token, mode = _hf_token_and_mode()
+    cloud_enabled = bool(token) and mode != "Local only"
+    cloud_model = os.getenv("NEXA_HF_MODEL") or None
+
+    if cloud_enabled and mode == "Hugging Face cloud first":
+        from .huggingface_backend import stream_text as hf_stream_text
+        emitted = False
+        try:
+            for piece in hf_stream_text(prepare_messages(messages), token, temperature, max_tokens, cloud_model):
+                if piece:
+                    emitted = True
+                    yield piece
+            if emitted:
+                return
+            raise RuntimeError("Hugging Face returned an empty answer.")
+        except Exception as cloud_error:
+            if emitted:
+                raise
+            local_emitted = False
+            try:
+                for piece in _stream_local_text(messages, model, temperature, max_tokens):
+                    if piece:
+                        local_emitted = True
+                        yield piece
+                if not local_emitted:
+                    raise RuntimeError("The local model returned an empty answer.")
+            except Exception as local_error:
+                raise RuntimeError(
+                    f"Hugging Face cloud failed: {cloud_error}\nLocal model fallback failed: {local_error}"
+                ) from local_error
+            return
+
+    emitted = False
+    try:
+        for piece in _stream_local_text(messages, model, temperature, max_tokens):
+            if piece:
+                emitted = True
+                yield piece
+        if emitted:
+            return
+        raise RuntimeError("The local model returned an empty answer.")
+    except Exception as local_error:
+        if emitted or not cloud_enabled:
+            raise
+        from .huggingface_backend import stream_text as hf_stream_text
+        cloud_emitted = False
+        try:
+            for piece in hf_stream_text(prepare_messages(messages), token, temperature, max_tokens, cloud_model):
+                if piece:
+                    cloud_emitted = True
+                    yield piece
+            if not cloud_emitted:
+                raise RuntimeError("Hugging Face returned an empty answer.")
+        except Exception as cloud_error:
+            raise RuntimeError(
+                f"Local model failed: {local_error}\nHugging Face fallback failed: {cloud_error}"
+            ) from cloud_error

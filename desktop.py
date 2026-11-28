@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import wave
+import webbrowser
 from pathlib import Path
 from uuid import uuid4
 from typing import Any
@@ -19,6 +20,8 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 from nexa_ai.ollama_runtime import OllamaRuntime, OllamaNotInstalled, OLLAMA_MODEL, OLLAMA_MODEL_NAME, OLLAMA_MODEL_SIZE
+from nexa_ai.hf_secrets import save_hf_token, clear_hf_token, has_hf_token
+from nexa_ai.huggingface_backend import DEFAULT_HF_MODEL
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.history_store import HistoryStore
 from nexa_ai.n8n_studio import build_n8n_messages, extract_n8n_json, workflow_json_text
@@ -28,13 +31,13 @@ from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label, build_chat_
 from nexa_ai.voice_utils import resample_mono_int16
 
 APP_NAME = "Nexa AI"
-APP_VERSION = "2.1.3"
+APP_VERSION = "2.2.0"
 MODEL_ID = OLLAMA_MODEL
-DEFAULT_AI_CHOICE = "Qwen2.5-Coder 3B · Offline"
+DEFAULT_AI_CHOICE = "Qwen2.5 1.5B · Hugging Face Hybrid"
 LOCAL_MODEL_PORT = 11439
 API_PORT = 8000
 SYSTEM_PROMPT = (
-    "You are Nexa AI, a practical offline software developer and automation engineer. "
+    "You are Nexa AI, a practical software developer and automation engineer running in local-first hybrid mode. "
     "Reply naturally in the user's language; when the user writes Bangla, use natural Bangla. "
     "Help with Python, JavaScript, HTML/CSS, Windows troubleshooting, GitHub projects and n8n workflow design. "
     "For coding tasks, provide complete runnable code, explain filenames and setup, and point out assumptions. "
@@ -67,7 +70,9 @@ def configure_environment() -> Path:
     os.environ["NEXA_PORT"] = str(API_PORT)
     os.environ["NEXA_BASE_URL"] = f"http://127.0.0.1:{API_PORT}/v1"
     os.environ["NEXA_DATA_DIR"] = str(data_dir)
-    os.environ["NEXA_MAX_OUTPUT_TOKENS"] = "2048"
+    os.environ["NEXA_MAX_OUTPUT_TOKENS"] = "3072"
+    os.environ.setdefault("NEXA_HF_MODE", "Hybrid (Local first)")
+    os.environ.setdefault("NEXA_HF_MODEL", DEFAULT_HF_MODEL)
     os.environ["NEXA_REQUEST_TIMEOUT"] = "600"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     return data_dir
@@ -139,6 +144,9 @@ class NexaDesktop:
         self.preferences_path = self.app_root / "preferences.json"
         self.theme_name = self._load_theme_preference()
         self.response_profile = self._load_response_preference()
+        self.hf_mode, self.hf_model = self._load_hf_preferences()
+        os.environ["NEXA_HF_MODE"] = self.hf_mode
+        os.environ["NEXA_HF_MODEL"] = self.hf_model
         self._voice_capture_rate = 16000
         self.recording_warnings = ""
         self.pending_send_queue: list[str] = []
@@ -153,6 +161,7 @@ class NexaDesktop:
         self.api_server = None
         self.api_thread: threading.Thread | None = None
         self.ready = False
+        self.local_model_ready = False
         self.file_api_ready = False
         self.busy = False
         self.uploading = False
@@ -167,7 +176,7 @@ class NexaDesktop:
         self.whisper_model = None
         self._build_ui()
 
-        self.status_var.set("Preparing Qwen2.5-Coder 3B · checking Ollama…")
+        self.status_var.set("Preparing Hugging Face Qwen 1.5B · starting hybrid engine…")
         threading.Thread(target=self._boot_engine, daemon=True, name="NexaBoot").start()
         self.root.after(100, self._poll_events)
 
@@ -196,12 +205,13 @@ class NexaDesktop:
         brand_copy = tk.Frame(brand, bg=self.PANEL)
         brand_copy.pack(side="left", fill="x", expand=True)
         tk.Label(brand_copy, text="Nexa AI", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 14)).pack(anchor="w")
-        tk.Label(brand_copy, text="PRIVATE · OFFLINE AI", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(1, 0))
+        tk.Label(brand_copy, text="HYBRID · LOCAL + HUGGING FACE", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(1, 0))
 
         self._sidebar_button(sidebar, "＋   New chat", self.new_conversation, accent=True).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⌕   Search conversations", self.open_history).pack(fill="x", padx=11, pady=(0, 7))
         self._sidebar_button(sidebar, "⚙   n8n Workflow Studio", self.open_n8n_studio).pack(fill="x", padx=11, pady=(0, 4))
         self._sidebar_button(sidebar, "▦   Plugin Manager", self.open_plugin_manager).pack(fill="x", padx=11, pady=(0, 4))
+        self._sidebar_button(sidebar, "☁   Hybrid AI Settings", self.open_hybrid_settings).pack(fill="x", padx=11, pady=(0, 7))
 
         tk.Label(sidebar, text="RECENT", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI Semibold", 8)).pack(anchor="w", padx=18, pady=(2, 8))
         self.recent_chats_frame = tk.Frame(sidebar, bg=self.PANEL)
@@ -215,8 +225,8 @@ class NexaDesktop:
         model_card.pack(fill="x")
         self.model_title_label = tk.Label(model_card, text=self.current_model_name, bg=self.PANEL_2, fg="#80cfa0", font=("Segoe UI Semibold", 9))
         self.model_title_label.pack(anchor="w")
-        tk.Label(model_card, text="OFFLINE ENGINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8)).pack(anchor="w", pady=(3, 0))
-        tk.Label(model_card, text="Runs on this PC · No API key · No cloud account", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8), wraplength=225, justify="left").pack(anchor="w", pady=(7, 0))
+        tk.Label(model_card, text="HYBRID ENGINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8)).pack(anchor="w", pady=(3, 0))
+        tk.Label(model_card, text="Local Qwen 1.5B · Optional HF cloud fallback", bg=self.PANEL_2, fg=self.MUTED, font=("Segoe UI", 8), wraplength=225, justify="left").pack(anchor="w", pady=(7, 0))
         tk.Label(bottom, text="DEVELOPED BY NTECH", bg=self.PANEL, fg=self.MUTED, font=("Segoe UI", 8)).pack(anchor="w", pady=(9, 0))
 
         main = tk.Frame(shell, bg=self.BG)
@@ -225,7 +235,7 @@ class NexaDesktop:
         top.pack(fill="x")
         top.pack_propagate(False)
         tk.Label(top, text="Nexa AI", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 13)).pack(side="left", padx=(24, 10))
-        self.model_badge = tk.Label(top, text="QWEN2.5-CODER 3B · OFFLINE", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=6)
+        self.model_badge = tk.Label(top, text="HF QWEN 1.5B · HYBRID", bg=self.PANEL_2, fg=self.ACCENT, font=("Segoe UI Semibold", 8), padx=10, pady=6)
         self.model_badge.pack(side="left", padx=(0, 6))
         self.status_var = tk.StringVar(value="Starting local engine…")
         self.status_label = tk.Label(top, textvariable=self.status_var, bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8))
@@ -345,6 +355,20 @@ class NexaDesktop:
             self.chat_canvas.itemconfigure(self.chat_window_id, width=event.width)
             height = max(event.height, self.chat_feed.winfo_reqheight())
             self.chat_canvas.itemconfigure(self.chat_window_id, height=height)
+            self.root.after_idle(self._refit_chat_messages)
+        except tk.TclError:
+            pass
+
+    def _refit_chat_messages(self) -> None:
+        try:
+            for row in self.chat_feed.winfo_children():
+                for child in row.winfo_children():
+                    if isinstance(child, tk.Text):
+                        self._schedule_message_fit(child)
+                    else:
+                        for nested in child.winfo_children():
+                            if isinstance(nested, tk.Text):
+                                self._schedule_message_fit(nested)
         except tk.TclError:
             pass
 
@@ -541,14 +565,17 @@ class NexaDesktop:
     def _load_response_preference(self) -> str:
         try:
             payload = json.loads(self.preferences_path.read_text(encoding="utf-8"))
-            profile = str(payload.get("response_profile", "Quick"))
-            return profile if profile in {"Quick", "Balanced", "Detailed"} else "Quick"
+            profile = str(payload.get("response_profile", "Detailed"))
+            profile_version = int(payload.get("response_profile_version", 1) or 1)
+            if profile_version < 2:
+                profile = "Detailed"
+            return profile if profile in {"Quick", "Balanced", "Detailed"} else "Detailed"
         except (OSError, ValueError, AttributeError):
-            return "Quick"
+            return "Detailed"
 
     def _change_response_profile(self, _event=None) -> None:
         selected = self.response_profile_var.get()
-        self.response_profile = selected if selected in {"Quick", "Balanced", "Detailed"} else "Quick"
+        self.response_profile = selected if selected in {"Quick", "Balanced", "Detailed"} else "Detailed"
         self._save_preferences()
         self.status_var.set(f"Response length set to {self.response_profile.lower()}")
 
@@ -556,13 +583,129 @@ class NexaDesktop:
         try:
             payload = {
                 "theme": self.theme_name,
-                "response_profile": getattr(self, "response_profile", "Quick"),
+                "response_profile": getattr(self, "response_profile", "Detailed"),
+                "response_profile_version": 2,
+                "hf_mode": getattr(self, "hf_mode", "Hybrid (Local first)"),
+                "hf_model": getattr(self, "hf_model", DEFAULT_HF_MODEL),
             }
             tmp = self.preferences_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.preferences_path)
         except OSError:
             pass
+
+    def _load_hf_preferences(self) -> tuple[str, str]:
+        modes = {"Hybrid (Local first)", "Hugging Face cloud first", "Local only"}
+        try:
+            payload = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            mode = str(payload.get("hf_mode", "Hybrid (Local first)"))
+            model = str(payload.get("hf_model", DEFAULT_HF_MODEL)).strip() or DEFAULT_HF_MODEL
+            return (mode if mode in modes else "Hybrid (Local first)"), model
+        except (OSError, ValueError, AttributeError):
+            return "Hybrid (Local first)", DEFAULT_HF_MODEL
+
+    def open_hybrid_settings(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Nexa AI · Hybrid AI Settings")
+        window.geometry("650x520")
+        window.resizable(False, False)
+        window.configure(bg=self.BG)
+        window.transient(self.root)
+        tk.Label(window, text="Hybrid AI Settings", bg=self.BG, fg=self.TEXT, font=("Segoe UI Semibold", 18)).pack(anchor="w", padx=24, pady=(22, 4))
+        tk.Label(
+            window,
+            text="NexaAI uses the Hugging Face Qwen 1.5B model locally. Connect a Hugging Face token to enable cloud fallback.",
+            bg=self.BG, fg=self.MUTED, font=("Segoe UI", 9), wraplength=590, justify="left",
+        ).pack(anchor="w", padx=24, pady=(0, 18))
+
+        body = tk.Frame(window, bg=self.PANEL, highlightbackground=self.BORDER, highlightthickness=1)
+        body.pack(fill="x", padx=22, pady=4)
+        inner = tk.Frame(body, bg=self.PANEL)
+        inner.pack(fill="x", padx=16, pady=16)
+
+        tk.Label(inner, text="Chat mode", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        mode_var = tk.StringVar(value=self.hf_mode)
+        mode_combo = ttk.Combobox(
+            inner, textvariable=mode_var,
+            values=["Hybrid (Local first)", "Hugging Face cloud first", "Local only"],
+            state="readonly", style="Nexa.TCombobox", width=42,
+        )
+        mode_combo.pack(fill="x", pady=(5, 14))
+
+        tk.Label(inner, text="Hugging Face cloud model", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        model_var = tk.StringVar(value=self.hf_model)
+        model_entry = ttk.Entry(inner, textvariable=model_var, style="Nexa.TEntry")
+        model_entry.pack(fill="x", pady=(5, 14))
+
+        tk.Label(inner, text="Hugging Face access token", bg=self.PANEL, fg=self.TEXT, font=("Segoe UI Semibold", 9)).pack(anchor="w")
+        token_entry = ttk.Entry(inner, show="•", style="Nexa.TEntry")
+        token_entry.pack(fill="x", pady=(5, 5))
+        connected = has_hf_token()
+        tk.Label(
+            inner,
+            text="A token is already saved securely on this Windows account. Leave blank to keep it." if connected else "No token saved. Local chat works without one.",
+            bg=self.PANEL, fg="#73d6a4" if connected else self.MUTED, font=("Segoe UI", 8),
+        ).pack(anchor="w", pady=(0, 12))
+
+        tk.Label(
+            window,
+            text="Cloud mode sends chat messages, recent context and extracted attachment text to Hugging Face. Provider usage may be paid; check pricing before enabling cloud-first mode.",
+            bg=self.BG, fg=self.MUTED, font=("Segoe UI", 8), wraplength=590, justify="left",
+        ).pack(anchor="w", padx=24, pady=(12, 8))
+
+        footer = tk.Frame(window, bg=self.BG)
+        footer.pack(fill="x", padx=22, pady=(8, 20))
+
+        def apply_settings() -> None:
+            mode = mode_var.get()
+            model = model_var.get().strip() or DEFAULT_HF_MODEL
+            token = token_entry.get().strip()
+            try:
+                if mode == "Hugging Face cloud first" and not (token or has_hf_token()):
+                    messagebox.showwarning("Hugging Face token required", "Connect a Hugging Face access token before selecting cloud-first mode.", parent=window)
+                    return
+                if token:
+                    save_hf_token(token)
+                self.hf_mode = mode
+                self.hf_model = model
+                os.environ["NEXA_HF_MODE"] = mode
+                os.environ["NEXA_HF_MODEL"] = model
+                self._save_preferences()
+                cloud_ready = has_hf_token() and mode != "Local only" and self.file_api_ready
+                if cloud_ready and not self.local_model_ready:
+                    self.ready = True
+                    self.status_var.set("● Hugging Face cloud fallback ready")
+                    self.status_label.configure(fg="#73d6a4")
+                elif self.local_model_ready:
+                    self.ready = True
+                    self.status_var.set("● Local Qwen 1.5B ready · Hybrid settings saved")
+                    self.status_label.configure(fg="#73d6a4")
+                elif mode == "Local only" or not has_hf_token():
+                    self.ready = False
+                    self.status_var.set("Connect a Hugging Face token or wait for the local model")
+                    self.status_label.configure(fg=self.MUTED)
+                self.model_badge.configure(text="HF QWEN 1.5B · " + ("HYBRID" if mode != "Local only" else "LOCAL"))
+                self._update_send_button()
+                window.destroy()
+            except Exception as exc:
+                messagebox.showerror("Hybrid settings", str(exc), parent=window)
+
+        def remove_token() -> None:
+            try:
+                clear_hf_token()
+                if not self.local_model_ready and self.hf_mode != "Local only":
+                    self.ready = False
+                self.status_var.set("Hugging Face token removed · local mode remains available")
+                self.status_label.configure(fg=self.MUTED)
+                self._update_send_button()
+                window.destroy()
+            except Exception as exc:
+                messagebox.showerror("Remove token", str(exc), parent=window)
+
+        ttk.Button(footer, text="Create HF token", style="Nexa.TButton", command=lambda: webbrowser.open("https://huggingface.co/settings/tokens")).pack(side="left")
+        ttk.Button(footer, text="Clear token", style="Nexa.TButton", command=remove_token).pack(side="left", padx=7)
+        ttk.Button(footer, text="Save settings", style="Accent.TButton", command=apply_settings).pack(side="right")
+        window.grab_set()
 
     def open_plugin_manager(self) -> None:
         window = tk.Toplevel(self.root)
@@ -661,7 +804,7 @@ class NexaDesktop:
             if not widget.winfo_exists():
                 return
             display_lines = widget.count("1.0", "end-1c", "displaylines")
-            line_count = max(1, int(display_lines[0])) if display_lines else 1
+            line_count = max(1, int(display_lines[0]) + 1) if display_lines else 1
             if int(widget.cget("height")) != line_count:
                 widget.configure(height=line_count)
         except (IndexError, TypeError, ValueError, tk.TclError):
@@ -871,13 +1014,10 @@ class NexaDesktop:
 
 
     def _boot_engine(self) -> None:
+        api_ready = False
         try:
-            self.events.put(("model_download_status", "Checking NexaAI offline engine…"))
-            self.ollama_runtime.ensure_server(self.log_handle)
-            self.log_handle.write("Ollama local API is ready.\n")
-
-            # Start local file services before the model pull so attachments
-            # are ready when the offline model finishes starting.
+            # Start and verify the private API before model loading. This allows
+            # a configured Hugging Face fallback if the local runtime fails.
             if self.api_server is None:
                 from nexa_ai.config import settings
                 import uvicorn
@@ -886,24 +1026,35 @@ class NexaDesktop:
                 self.api_server = uvicorn.Server(config)
                 self.api_thread = threading.Thread(target=self.api_server.run, daemon=True, name="NexaLocalAPI")
                 self.api_thread.start()
-                if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
-                    raise RuntimeError("NexaAI local API could not start. Port 8000 may already be in use.")
+            if not self._wait_for_url(f"http://127.0.0.1:{API_PORT}/health", 30):
+                raise RuntimeError("NexaAI private chat service could not start. Port 8000 may already be in use.")
+            api_ready = True
             self.events.put(("file_api_ready", None))
+
+            self.events.put(("model_download_status", "Checking local Hugging Face Qwen 1.5B engine…"))
+            self.ollama_runtime.ensure_server(self.log_handle)
+            self.log_handle.write("Ollama local API is ready.\n")
 
             def report_progress(status: str, completed: int, total: int, speed: float) -> None:
                 self.events.put(("model_download_status", status))
                 if total:
                     self.events.put(("model_download_progress", (completed, total, speed)))
 
-            if OLLAMA_MODEL not in self.ollama_runtime.installed_models():
-                self.events.put(("model_download_status", f"Installing missing Qwen2.5-Coder 3B · {OLLAMA_MODEL_SIZE}"))
+            if not self.ollama_runtime.model_is_installed():
+                self.events.put(("model_download_status", f"Installing Hugging Face Qwen 1.5B · {OLLAMA_MODEL_SIZE}"))
             self.ollama_runtime.ensure_model(report_progress)
             self.log_handle.write(f"Local model ready: {OLLAMA_MODEL}\n")
             self.events.put(("ready", None))
         except OllamaNotInstalled as exc:
-            self.events.put(("ollama_missing", str(exc)))
+            if api_ready and has_hf_token() and self.hf_mode != "Local only":
+                self.events.put(("hybrid_fallback_ready", str(exc)))
+            else:
+                self.events.put(("ollama_missing", str(exc)))
         except Exception as exc:
-            self.events.put(("boot_error", str(exc)))
+            if api_ready and has_hf_token() and self.hf_mode != "Local only":
+                self.events.put(("hybrid_fallback_ready", str(exc)))
+            else:
+                self.events.put(("boot_error", str(exc)))
 
     @staticmethod
     def _wait_for_url(url: str, timeout_seconds: int) -> bool:
@@ -936,13 +1087,20 @@ class NexaDesktop:
                 flush_stream()
                 if kind == "ready":
                     self.ready = True
-                    self.status_var.set("● Offline Qwen ready")
+                    self.local_model_ready = True
+                    self.status_var.set("● Local Qwen 1.5B ready · Hybrid enabled")
                     self.status_label.configure(fg="#73d6a4")
                     self._update_send_button()
                     self.root.after(80, self.show_chat_workspace)
                 elif kind == "file_api_ready":
                     self.file_api_ready = True
-                    self.status_var.set("Local file service ready · " + self.current_model_name)
+                    self.status_var.set("Private chat service ready · " + self.current_model_name)
+                elif kind == "hybrid_fallback_ready":
+                    self.local_model_ready = False
+                    self.ready = True
+                    self.status_var.set("● Hugging Face cloud fallback ready · local model unavailable")
+                    self.status_label.configure(fg="#73d6a4")
+                    self._update_send_button()
                 elif kind == "history_updated":
                     self._refresh_recent_conversations()
                 elif kind == "model_download_status":
@@ -955,26 +1113,26 @@ class NexaDesktop:
                         percent = done * 100 / total
                         remaining = max(0, total - done)
                         eta = f" · ETA {remaining / speed:.0f}s" if speed > 0 else ""
-                        self.status_var.set(f"Downloading Qwen2.5-Coder 3B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
+                        self.status_var.set(f"Downloading Hugging Face Qwen 1.5B · {percent:.1f}% · {done / (1024 ** 3):.2f}/{total / (1024 ** 3):.2f} GB · {rate}{eta}")
                     else:
-                        self.status_var.set(f"Downloading Qwen2.5-Coder 3B · {done / (1024 ** 2):.0f} MB · {rate}")
+                        self.status_var.set(f"Downloading Hugging Face Qwen 1.5B · {done / (1024 ** 2):.0f} MB · {rate}")
                     self.status_label.configure(fg=self.ACCENT)
                 elif kind == "ollama_missing":
-                    self.status_var.set("Bundled AI engine missing")
+                    self.status_var.set("Local engine missing · check Hybrid AI Settings")
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showerror(
                         "NexaAI engine missing",
-                        "The built-in Ollama runtime could not be found. Repair or reinstall NexaAI to restore the offline AI engine.\n\n"
+                        "The local Ollama runtime could not be found. Connect a Hugging Face token in Hybrid AI Settings or repair the local runtime.\n\n"
                         + str(payload),
                     )
                 elif kind == "boot_error":
                     self.ready = False
-                    self.status_var.set("Offline engine failed to start")
+                    self.status_var.set("AI engine failed to start")
                     self._update_send_button()
                     self.status_label.configure(fg="#ff8d8d")
                     messagebox.showwarning(
-                        "Offline Qwen unavailable",
-                        "The offline Qwen engine could not start.\n\n" + str(payload),
+                        "NexaAI engine unavailable",
+                        "The local model could not start and no Hugging Face fallback is connected.\n\n" + str(payload),
                     )
                 elif kind == "first_token":
                     self.status_var.set("Writing answer…")
@@ -982,7 +1140,7 @@ class NexaDesktop:
                 elif kind == "done":
                     self.busy = False
                     self._update_send_button()
-                    self.status_var.set("● Offline Qwen ready")
+                    self.status_var.set("● Hybrid AI ready")
                     self.status_label.configure(fg="#73d6a4")
                     self._finish_assistant_message()
                     self._scroll_chat_to_bottom()
@@ -998,7 +1156,7 @@ class NexaDesktop:
                 elif kind == "request_error":
                     self.busy = False
                     self._update_send_button()
-                    self.status_var.set("Offline response failed")
+                    self.status_var.set("AI response failed")
                     self.status_label.configure(fg="#ff8d8d")
                     self.voice_turn = False
                     error_text = f"I couldn't complete that request.\n\n{payload}"
@@ -1027,7 +1185,7 @@ class NexaDesktop:
                         self.status_label.configure(fg=self.ACCENT)
                 elif kind == "voice_transcribed":
                     self.voice_button.configure(state="normal", text="🎙 Voice")
-                    self.status_var.set("Voice recognized · sending to selected AI…")
+                    self.status_var.set("Voice recognized · sending to Hybrid AI…")
                     self.input.delete("1.0", "end")
                     self.input_placeholder_active = False
                     self.input.configure(fg=self.TEXT)
@@ -1095,9 +1253,12 @@ class NexaDesktop:
             return
 
         if not self.ready:
-            self.status_var.set("Offline Qwen is still starting. Please wait until the model is ready.")
-            self._update_send_button()
-            return
+            if has_hf_token() and self.hf_mode != "Local only" and self.file_api_ready:
+                self.ready = True
+            else:
+                self.status_var.set("AI engine is still starting. Open Hybrid AI Settings to connect Hugging Face if needed.")
+                self._update_send_button()
+                return
 
         # Keep a follow-up instead of dropping it while the local model is responding.
         if self.busy:
@@ -1120,7 +1281,7 @@ class NexaDesktop:
         self.input.configure(fg=self.TEXT)
         self.busy = True
         self._update_send_button()
-        self.status_var.set(f"Preparing {self.current_model_name} response…")
+        self.status_var.set(f"Preparing {self.current_model_name} response… · {self.hf_mode}")
         self.status_label.configure(fg=self.ACCENT)
         attachments = list(self.pending_files)
         self.pending_files.clear()
@@ -1205,7 +1366,7 @@ class NexaDesktop:
 
             final_answer = "".join(answer).strip()
             if not final_answer:
-                raise RuntimeError("Qwen returned an empty response. Try a shorter prompt or restart the offline engine.")
+                raise RuntimeError("The selected AI returned an empty response. Check the model connection and try again.")
             self.messages.append({"role": "assistant", "content": final_answer})
             self._save_chat()
             self.events.put(("assistant_complete", final_answer))
@@ -1563,7 +1724,7 @@ class NexaDesktop:
 
         def generate() -> None:
             if not self.ready or self.busy:
-                messagebox.showwarning("Offline model not ready", "Wait until Qwen2.5-Coder 3B is ready before generating a workflow.", parent=window)
+                messagebox.showwarning("Offline model not ready", "Wait until Hugging Face Qwen 1.5B is ready before generating a workflow.", parent=window)
                 return
             model_id, model_name = self.current_model_id, self.current_model_name
             requirement = prompt_box.get("1.0", "end-1c").strip()

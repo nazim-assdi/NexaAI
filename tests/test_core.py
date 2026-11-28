@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from nexa_ai.file_store import guess_mime_type
-from nexa_ai.local_backend import _parse_content, prepare_messages, _options, parse_ollama_stream_chunk
+from nexa_ai.local_backend import _parse_content, prepare_messages, _options, parse_ollama_stream_chunk, _hf_token_and_mode
 from nexa_ai.ollama_runtime import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_MODEL_SIZE, OllamaNotInstalled, OllamaRuntime
 from nexa_ai.plugin_manager import PluginManager
 from nexa_ai.file_store import StoredFile
@@ -17,6 +17,7 @@ from nexa_ai.server_config import build_uvicorn_config
 from nexa_ai.api import ChatRequest
 from nexa_ai.ui_layout import calculate_window_geometry
 from nexa_ai.chat_layout import CHAT_SUGGESTIONS, recent_chat_label
+from nexa_ai.huggingface_backend import DEFAULT_HF_MODEL, _payload
 from nexa_ai.chat_layout import build_chat_context, response_token_limit, enqueue_followup, take_followup
 from nexa_ai.voice_utils import resample_mono_int16
 
@@ -39,9 +40,60 @@ class CoreTests(unittest.TestCase):
         messages = [{"role": "user", "content": "hello"}]
         self.assertEqual(prepare_messages(messages), messages)
 
-    def test_ollama_runtime_uses_qwen25_coder_3b(self):
-        self.assertEqual(OLLAMA_MODEL, "qwen2.5-coder:3b")
-        self.assertIn("1.9 GB", OLLAMA_MODEL_SIZE)
+    def test_ollama_runtime_uses_hugging_face_qwen_1_5b(self):
+        self.assertEqual(OLLAMA_MODEL, "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
+        self.assertIn("1.12 GB", OLLAMA_MODEL_SIZE)
+
+
+    def test_hugging_face_cloud_model_default_is_configurable(self):
+        self.assertEqual(DEFAULT_HF_MODEL, "Qwen/Qwen3-4B-Thinking-2507:cheapest")
+        payload = _payload([{"role": "user", "content": "hello"}], 0.4, 800, None, True)
+        self.assertEqual(payload["model"], DEFAULT_HF_MODEL)
+        self.assertTrue(payload["stream"])
+        self.assertEqual(payload["max_tokens"], 800)
+
+    def test_hybrid_mode_defaults_to_local_first_without_forcing_a_token(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NEXA_HF_MODE", None)
+            with patch("nexa_ai.hf_secrets.load_hf_token", return_value=None):
+                token, mode = _hf_token_and_mode()
+        self.assertIsNone(token)
+        self.assertEqual(mode, "Hybrid (Local first)")
+
+    def test_local_model_tag_check_is_case_insensitive(self):
+        runtime = OllamaRuntime()
+        with patch.object(runtime, "installed_models", return_value=[OLLAMA_MODEL.lower()]):
+            self.assertTrue(runtime.model_is_installed())
+
+
+    def test_local_first_falls_back_to_hugging_face_when_local_fails(self):
+        from nexa_ai import local_backend
+        with patch.object(local_backend, "_hf_token_and_mode", return_value=("hf_test", "Hybrid (Local first)")):
+            with patch.object(local_backend, "_generate_local_text", side_effect=RuntimeError("local down")):
+                with patch("nexa_ai.huggingface_backend.generate_text", return_value="cloud answer") as cloud:
+                    answer = local_backend.generate_text([{"role": "user", "content": "hello"}])
+        self.assertEqual(answer, "cloud answer")
+        cloud.assert_called_once()
+
+    def test_local_first_stream_falls_back_before_any_local_tokens(self):
+        from nexa_ai import local_backend
+        def fail_local(*args, **kwargs):
+            raise RuntimeError("local down")
+            yield "unreachable"
+        with patch.object(local_backend, "_hf_token_and_mode", return_value=("hf_test", "Hybrid (Local first)")):
+            with patch.object(local_backend, "_stream_local_text", side_effect=RuntimeError("local down")):
+                with patch("nexa_ai.huggingface_backend.stream_text", return_value=iter(["cloud ", "reply"])):
+                    answer = "".join(local_backend.stream_text([{"role": "user", "content": "hello"}]))
+        self.assertEqual(answer, "cloud reply")
+
+    def test_local_first_does_not_send_to_cloud_without_a_token(self):
+        from nexa_ai import local_backend
+        with patch.object(local_backend, "_hf_token_and_mode", return_value=(None, "Hybrid (Local first)")):
+            with patch.object(local_backend, "_generate_local_text", return_value="local answer"):
+                with patch("nexa_ai.huggingface_backend.generate_text") as cloud:
+                    answer = local_backend.generate_text([{"role": "user", "content": "hello"}])
+        self.assertEqual(answer, "local answer")
+        cloud.assert_not_called()
 
     def test_ollama_runtime_explains_missing_installation(self):
         runtime = OllamaRuntime()
@@ -63,7 +115,7 @@ class CoreTests(unittest.TestCase):
 
     def test_ollama_runtime_does_not_pull_an_already_installed_model(self):
         runtime = OllamaRuntime()
-        with patch.object(runtime, "installed_models", return_value=["qwen2.5-coder:3b"]):
+        with patch.object(runtime, "installed_models", return_value=["hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"]):
             runtime.ensure_model()
         self.assertFalse(runtime.started_by_nexa)
 
@@ -84,9 +136,9 @@ class CoreTests(unittest.TestCase):
             parse_ollama_stream_chunk('{"error":"model not found"}')
 
     def test_response_profiles_support_complete_answers(self):
-        self.assertEqual(response_token_limit("Quick"), 512)
-        self.assertEqual(response_token_limit("Balanced"), 1024)
-        self.assertEqual(response_token_limit("Detailed"), 1792)
+        self.assertEqual(response_token_limit("Quick"), 1024)
+        self.assertEqual(response_token_limit("Balanced"), 2048)
+        self.assertEqual(response_token_limit("Detailed"), 3072)
 
     def test_followup_queue_preserves_order_and_enforces_limit(self):
         queue = []
@@ -129,10 +181,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(recent_chat_label("   "), "New conversation")
 
     def test_response_profiles_offer_speed_and_detail_choices(self):
-        self.assertEqual(response_token_limit("Quick"), 512)
-        self.assertEqual(response_token_limit("Balanced"), 1024)
-        self.assertEqual(response_token_limit("Detailed"), 1792)
-        self.assertEqual(response_token_limit("unknown"), 1024)
+        self.assertEqual(response_token_limit("Quick"), 1024)
+        self.assertEqual(response_token_limit("Balanced"), 2048)
+        self.assertEqual(response_token_limit("Detailed"), 3072)
+        self.assertEqual(response_token_limit("unknown"), 3072)
 
     def test_chat_context_keeps_system_and_recent_turns_only(self):
         messages = [{"role": "system", "content": "rules"}]
@@ -165,7 +217,7 @@ class CoreTests(unittest.TestCase):
             image_path.write_bytes(b"image-bytes")
             stored = StoredFile("image-1", "sample.png", str(image_path), "image/png", image_path.stat().st_size)
             with patch("nexa_ai.local_backend.file_store.get", return_value=stored):
-                with self.assertRaisesRegex(RuntimeError, "Qwen2.5-Coder"):
+                with self.assertRaisesRegex(RuntimeError, "Qwen2.5 1.5B"):
                     prepare_messages([{"role": "user", "content": [{"type": "input_file", "file_id": "image-1"}]}])
 
     def test_plugin_toggle_persists(self):
@@ -206,7 +258,7 @@ class CoreTests(unittest.TestCase):
                 {"role": "user", "content": "Build an n8n workflow"},
                 {"role": "assistant", "content": "Here is the plan."},
             ]
-            store.save(conversation_id, "n8n workflow", messages, "qwen2.5-coder:3b")
+            store.save(conversation_id, "n8n workflow", messages, "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
             items = store.list_conversations()
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0]["title"], "n8n workflow")

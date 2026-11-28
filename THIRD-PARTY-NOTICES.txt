@@ -1,51 +1,21 @@
-NexaAI is a Windows desktop application. The NexaAI installer includes the Ollama Windows runtime. Qwen2.5-Coder 3B model weights are downloaded from the Ollama model registry on first launch.
+NexaAI 2.2.0 — Third-Party Notices
 
-1. Ollama Windows standalone runtime
-   Project: https://github.com/ollama/ollama
-   Documentation: https://github.com/ollama/ollama/blob/main/docs/windows.mdx
-   Bundled release asset: ollama-windows-amd64.zip from Ollama v0.11.10
-   The Ollama runtime is embedded in the NexaAI installer under the application runtime folder.
-   The upstream license is included as LICENSE alongside the bundled runtime.
-   NexaAI starts Ollama as a local process and connects only to its app-specific loopback
-   API at 127.0.0.1:11439.
+Hugging Face Qwen2.5-1.5B-Instruct-GGUF
+- Model: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+- Quantization: Q4_K_M
+- License: Apache License 2.0
+- Model files are downloaded from Hugging Face on first launch. The full license is included in the installation.
 
-2. Qwen2.5-Coder 3B
-   Project: https://github.com/QwenLM/Qwen2.5-Coder
-   Official model card: https://huggingface.co/Qwen/Qwen2.5-Coder-3B
-   Ollama model library: https://ollama.com/library/qwen2.5-coder
-   Ollama tag: qwen2.5-coder:3b
-   Approximate Ollama download: 1.9 GB
-   License: Qwen Research License Agreement (September 19, 2024), not Apache 2.0.
-   The license permits non-commercial use for research or evaluation only. Commercial
-   use requires a separate license from Alibaba Cloud. The complete agreement and
-   required attribution are included in the installer and installed app.
-   Required attribution notice:
-   "Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) Alibaba Cloud. All Rights Reserved."
-   Model weights are fetched by the bundled Ollama runtime on first launch and stored
-   under the current Windows user's NexaAI engine folder.
+Ollama
+- Windows runtime is bundled from the official Ollama standalone release.
+- Project: https://github.com/ollama/ollama
+- License: MIT. See the Ollama LICENSE file included with the runtime.
 
-3. Python dependencies
-   FastAPI, Uvicorn, Pydantic, HTTPX, Rich, python-multipart, python-dotenv, pypdf,
-   NumPy, faster-whisper, CTranslate2, av, sounddevice, PortAudio, pyttsx3,
-   comtypes and imageio-ffmpeg retain their respective upstream licenses.
-   See each upstream project for license terms.
+Python and bundled runtime dependencies
+- FastAPI, Uvicorn, Pydantic, httpx, pypdf, faster-whisper, CTranslate2, PyAV, NumPy, sounddevice, pyttsx3, comtypes, imageio-ffmpeg and related transitive packages retain their respective upstream licenses.
+- Refer to the license and notice files distributed with the Python packages and model/runtime downloads.
 
-4. Whisper base speech-recognition model (downloaded on first Voice Chat use)
-   Project: https://github.com/openai/whisper
-   License: MIT (see upstream project/model distribution).
-   This is a speech-to-text component for voice input, not another chat LLM.
-
-5. imageio-ffmpeg
-   Project: https://github.com/imageio/imageio-ffmpeg
-   License: BSD 2-Clause.
-   FFmpeg's own license depends on the options enabled in the binary; see
-   https://ffmpeg.org/legal.html and the upstream build metadata.
-
-6. Windows SAPI voices
-   NexaAI uses Windows speech voices already installed by the user. No voice is
-   redistributed by NexaAI.
-
-7. Pillow
-   Project: https://python-pillow.org/
-   License: HPND. Used only in the Windows build pipeline to create application
-   and installer icons; Pillow is not bundled with NexaAI.
+Hugging Face Inference Providers
+- Optional cloud chat uses the Hugging Face Inference Providers router: https://router.huggingface.co/v1/chat/completions
+- Cloud service and selected provider model terms, pricing and privacy policies are governed by their respective providers.
+- No cloud requests are made unless the user connects a Hugging Face token and selects a cloud-enabled mode.

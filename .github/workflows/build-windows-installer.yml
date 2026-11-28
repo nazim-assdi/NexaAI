@@ -1,4 +1,4 @@
-name: Build Nexa AI 2.1.3 Windows Offline Qwen 3B Installer
+name: Build Nexa AI 2.2.0 Windows Hybrid Qwen 1.5B Installer
 
 concurrency:
   group: nexa-ai-windows-installer-${{ github.ref }}
@@ -74,7 +74,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "The bundled Ollama CLI failed its version check." }
 
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ollama/ollama/v0.11.10/LICENSE" -OutFile (Join-Path $ollamaDir "LICENSE")
-          Write-Host "Verified embedded Ollama CLI. Qwen2.5-Coder 3B is downloaded automatically by NexaAI on first launch with visible progress."
+          Write-Host "Verified embedded Ollama CLI. Hugging Face Qwen2.5 1.5B GGUF is downloaded automatically by NexaAI on first launch with visible progress."
 
       - name: Build self-contained desktop application
         shell: pwsh
@@ -108,18 +108,18 @@ jobs:
           if (-not (Test-Path "dist\NexaAI\NexaAI.exe")) { throw "Desktop application EXE was not produced." }
           if (-not (Test-Path "build-assets\ollama\ollama.exe")) { throw "Bundled Ollama executable is missing." }
 
-      - name: Prepare Qwen Research License and required attribution notice
+      - name: Prepare Qwen Apache 2.0 license and required attribution notice
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $licenseDir = Join-Path $PWD "licenses"
           New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
-          $modelLicense = Join-Path $licenseDir "QWEN-RESEARCH-LICENSE.txt"
-          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-Coder-3B/resolve/main/LICENSE" -OutFile $modelLicense
-          if ((Get-Item $modelLicense).Length -lt 6000) { throw "The Qwen Research License download looks incomplete." }
+          $modelLicense = Join-Path $licenseDir "APACHE-2.0.txt"
+          Invoke-WebRequest -Uri "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/LICENSE" -OutFile $modelLicense
+          if ((Get-Item $modelLicense).Length -lt 6000) { throw "The Qwen Apache 2.0 license download looks incomplete." }
           $modelNotice = Join-Path $licenseDir "QWEN-NOTICE.txt"
-          Set-Content -Path $modelNotice -Value "Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) Alibaba Cloud. All Rights Reserved." -Encoding utf8
-          Write-Host "Prepared the Qwen Research License and required attribution notice."
+          Set-Content -Path $modelNotice -Value "Qwen2.5-1.5B-Instruct-GGUF is distributed under the Apache License, Version 2.0. Copyright (c) Alibaba Cloud." -Encoding utf8
+          Write-Host "Prepared the Qwen Apache 2.0 license and required attribution notice."
 
       - name: Install Inno Setup
         shell: pwsh
@@ -141,7 +141,7 @@ jobs:
       - name: Upload installable software
         uses: actions/upload-artifact@v4
         with:
-          name: NexaAI-Windows-x64-Offline-Installer
+          name: NexaAI-Windows-x64-Hybrid-Installer
           path: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt
@@ -171,14 +171,14 @@ jobs:
         if: steps.latest.outputs.is_latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-v2.1.3
-          name: Nexa AI Desktop v2.1.3 — Offline Qwen + Chat Display Fix
+          tag_name: desktop-v2.2.0
+          name: Nexa AI Desktop v2.2.0 — Hugging Face Qwen 1.5B Hybrid
           body: |
-            NexaAI 2.1.3 is an offline-only Windows x64 assistant powered by Qwen2.5-Coder 3B. The setup installer includes the Ollama standalone runtime. On first launch, NexaAI downloads the model (about 1.9 GB) into its private model folder with visible progress. No cloud AI provider, API key or account is included or required. After the first download, chats and supported attachments remain on this PC. Qwen2.5-Coder 3B is restricted to non-commercial research or evaluation by its license.
+            NexaAI 2.2.0 is a Windows x64 local-first hybrid assistant. Its default local model is Qwen2.5-1.5B-Instruct-GGUF Q4_K_M from Hugging Face (about 1.12 GB, Apache 2.0). The installer includes the Ollama runtime; on first launch NexaAI downloads the model automatically with visible progress. Local chat works offline after that download and does not require a Hugging Face token.
 
-            The bundled local engine uses a private app-specific port and keeps chat content on this PC. Whisper base speech recognition is still downloaded on first voice use; that optional voice download is separate from the bundled chat model.
+            Hybrid mode tries the local Qwen 1.5B first and can fall back to Hugging Face Inference Providers if a token is configured. Cloud-first and local-only modes are also available in Hybrid AI Settings. Cloud requests send chat messages to Hugging Face and may incur provider charges; check account pricing before enabling cloud-first mode. The token is encrypted with Windows DPAPI. Whisper base speech recognition is still downloaded on first voice use.
 
-            The chat display now shows a visible Thinking state, keeps streamed text while generating, and re-renders the complete final answer after generation. Message height is recalculated after wrapping and resizing to prevent clipped or missing lines. The composer supports Enter-to-send and Shift+Enter for new lines. The workspace keeps local history, follow-up queue, expanded Quick/Balanced/Detailed response limits, voice tools, plugin manager and n8n Workflow Studio. The Qwen 3B model is licensed for non-commercial research/evaluation only; commercial use requires a separate license from Alibaba Cloud.
+            The Messenger-style chat displays user and assistant bubbles, streams answers, grows message cards to fit wrapped text, reflows them on resize and scrolls through long answers. Detailed is the default response profile with a 3,072-token output cap; Quick and Balanced are available. The workspace keeps local history, follow-up queue, voice tools, plugin manager and n8n Workflow Studio. The local Qwen2.5 1.5B GGUF distribution is Apache 2.0 licensed. Hugging Face cloud fallback is optional and uses the cloud model configured in Hybrid AI Settings.
           files: |
             output/NexaAI-Setup-*.exe
             output/SHA256.txt

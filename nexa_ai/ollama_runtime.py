@@ -13,9 +13,9 @@ import httpx
 
 OLLAMA_PORT = 11439
 OLLAMA_BASE_URL = f"http://127.0.0.1:{OLLAMA_PORT}"
-OLLAMA_MODEL = "qwen2.5-coder:3b"
-OLLAMA_MODEL_NAME = "Qwen2.5-Coder 3B"
-OLLAMA_MODEL_SIZE = "About 1.9 GB"
+OLLAMA_MODEL = "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
+OLLAMA_MODEL_NAME = "Qwen2.5 1.5B Instruct · Hugging Face"
+OLLAMA_MODEL_SIZE = "About 1.12 GB"
 
 
 class OllamaNotInstalled(RuntimeError):
@@ -116,8 +116,12 @@ class OllamaRuntime:
         return [str(item.get("name") or item.get("model")) for item in models
                 if isinstance(item, dict) and (item.get("name") or item.get("model"))]
 
+    def model_is_installed(self) -> bool:
+        expected = self.model.casefold()
+        return any(name.casefold() == expected for name in self.installed_models())
+
     def ensure_model(self, progress: Callable[[str, int, int, float], None] | None = None) -> None:
-        if self.model in self.installed_models():
+        if self.model_is_installed():
             return
         last_time = time.monotonic()
         last_bytes = 0
@@ -130,7 +134,7 @@ class OllamaRuntime:
                         detail = response.json().get("error", response.text)
                     except ValueError:
                         detail = response.text
-                    raise RuntimeError(f"Qwen2.5-Coder setup failed: {detail}")
+                    raise RuntimeError(f"Hugging Face Qwen2.5 1.5B setup failed: {detail}")
                 for line in response.iter_lines():
                     if not line:
                         continue
@@ -139,8 +143,8 @@ class OllamaRuntime:
                     except ValueError:
                         continue
                     if item.get("error"):
-                        raise RuntimeError(f"Qwen2.5-Coder setup failed: {item['error']}")
-                    status = str(item.get("status", "Installing Qwen2.5-Coder 3B"))
+                        raise RuntimeError(f"Hugging Face Qwen2.5 1.5B setup failed: {item['error']}")
+                    status = str(item.get("status", "Installing Hugging Face Qwen2.5 1.5B"))
                     completed = int(item.get("completed", 0) or 0)
                     total = int(item.get("total", 0) or 0)
                     now = time.monotonic()
@@ -149,8 +153,8 @@ class OllamaRuntime:
                     if progress:
                         progress(status, completed, total, speed)
                     last_time, last_bytes = now, completed
-        if self.model not in self.installed_models():
-            raise RuntimeError("Qwen2.5-Coder 3B setup ended but the model is not listed as installed.")
+        if not self.model_is_installed():
+            raise RuntimeError("Hugging Face Qwen2.5 1.5B setup ended but the model is not listed as installed.")
 
     def stop(self) -> None:
         if not self.started_by_nexa or not self.process or self.process.poll() is not None:

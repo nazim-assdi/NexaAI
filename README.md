@@ -1,71 +1,70 @@
-# NexaAI 2.1.3 — NTech Edition · Offline Qwen2.5-Coder 3B
+# NexaAI 2.2.0 — NTech Edition · Hugging Face Qwen 1.5B Hybrid
 
-NexaAI is a Windows x64 desktop assistant for Bengali and English chat, coding help, n8n workflow design, local chat history, attachments and voice. It uses only the Qwen2.5-Coder 3B model through the Ollama runtime bundled with the installer. There is no cloud AI, online chat provider, API-key setting or account requirement.
+NexaAI is a Windows x64 desktop assistant with Bengali and English chat, coding help, n8n workflow design, local chat history, document attachments and voice. It uses a Hugging Face Qwen2.5 1.5B Instruct GGUF model locally by default, with optional Hugging Face Inference Providers as a cloud fallback.
 
 ## Install
 
-1. Download and run **NexaAI-Setup-2.1.3-Windows-x64.exe**.
-2. Review and accept the Qwen Research License in the installer. The model is licensed for non-commercial research and evaluation only.
-3. On first launch, NexaAI automatically downloads Qwen2.5-Coder 3B (about 1.9 GB) and shows download progress.
-4. After the model is installed, chat and coding assistance run locally without an internet connection.
+1. Download and run **NexaAI-Setup-2.2.0-Windows-x64.exe**.
+2. Accept the Apache 2.0 license shown by the installer.
+3. On first launch, NexaAI automatically downloads **Qwen2.5-1.5B-Instruct-GGUF Q4_K_M** from Hugging Face (about 1.12 GB) into its private model folder.
+4. After the model finishes downloading, local chats work offline. No separate Ollama installation or API key is needed for local mode.
 
-The initial model download requires internet. Keep at least 3 GB free for the model and runtime. No separate Ollama installation, API key, cloud account or administrator permission is needed. NexaAI installs for the current Windows user.
+Keep at least 2 GB free for the model download and runtime. The installer includes the Ollama Windows runtime.
 
-## Offline AI engine
+## Default local model
 
-**Qwen2.5-Coder 3B (Ollama tag: `qwen2.5-coder:3b`)**
+**Hugging Face:** `Qwen/Qwen2.5-1.5B-Instruct-GGUF`  
+**Quantization:** `Q4_K_M`  
+**Ollama model reference:** `hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M`  
+**Approximate model size:** 1.12 GB  
+**License:** Apache 2.0
 
-- Approximately 1.9 GB model download.
-- Coding-focused generation, code reasoning and debugging.
-- Model files are stored under `%LOCALAPPDATA%\NexaAI\Engine\models`.
-- The bundled Ollama service listens only on the private loopback address `127.0.0.1:11439`.
-- Uses a conservative 4K context and CPU thread limit for lower-memory Windows PCs.
-- After the first download, chat works offline and requires no API key.
+The local model is text-only. It supports regular conversation, coding assistance and text-based document workflows. Image and video understanding are not included.
 
-**Important model licence:** Qwen2.5-Coder 3B is provided under the Qwen Research License, not Apache 2.0. The license defines non-commercial use as research or evaluation only. Commercial use requires a separate license from Alibaba Cloud. The complete agreement and required attribution notice are included in the installer and installed app.
+## Hybrid chat
+
+Open **Hybrid AI Settings** from the sidebar:
+
+- **Hybrid (Local first):** private local Qwen 1.5B first; use Hugging Face cloud only when the local model cannot answer due to an engine error.
+- **Hugging Face cloud first:** use the configured hosted model first and fall back to local Qwen 1.5B if the cloud request fails before producing output.
+- **Local only:** never send chat prompts to Hugging Face.
+
+The optional cloud model defaults to `Qwen/Qwen3-4B-Thinking-2507:cheapest`. The Hugging Face Inference Providers router requires a Hugging Face access token with inference permission. Create one at https://huggingface.co/settings/tokens and paste it in Hybrid AI Settings. NexaAI encrypts the token at rest with Windows DPAPI for the current Windows account. Cloud requests send chat prompts and conversation context to Hugging Face; provider usage may be paid. Check your account's provider pricing and credits before enabling cloud-first mode. The 1.5B local model remains the default.
 
 ## Chat workspace
 
-- Offline-only chat; no provider selector, API-key box or cloud requests.
-- Centered message layout with readable user/assistant cards.
-- Streaming text with a visible “Thinking…” state and a final full-answer render to prevent missing or clipped replies.
-- Message cards recalculate their height after text wrapping and window resizing.
-- Enter sends a message; Shift+Enter inserts a new line.
+- Messenger-style user and assistant chat bubbles.
+- Streaming responses with a visible Thinking state.
+- Message cards grow to fit the full wrapped answer and reflow after window resizing.
+- Vertical scrolling for long conversations and long assistant replies.
+- Detailed response profile selected by default (up to 3,072 output tokens); Quick and Balanced remain available.
+- Enter sends; Shift+Enter inserts a new line.
 - Local chat history, recent chats, conversation search and plugin manager.
-- Quick, Balanced and Detailed response profiles with expanded output limits.
-- Supported text/code/PDF attachments are processed locally.
-- Up to four queued follow-up prompts.
+- Supported selectable-text PDFs and text/code attachments are processed on the PC.
 
 ## Voice Chat
 
 Voice input uses faster-whisper base on CPU int8. The Whisper model is downloaded on first voice use (about 150 MB), then speech recognition runs offline. Speech replies use Windows SAPI voices already installed on the PC.
 
-Voice cache: `%LOCALAPPDATA%\NexaAI\Voice`.
-
 ## n8n Workflow Studio
 
-Describe an automation in Bangla or English. The offline Qwen model generates n8n workflow JSON, checks basic node names and connection references, and lets you copy or export the JSON for import into your own n8n instance. Workflow JSON is generated and validated but is not executed or monitored by NexaAI.
-
-## Plugins and attachments
-
-- Plugin Manager can import a local plugin ZIP. Imported code runs with your Windows user permissions; only enable code you trust.
-- Supported attachments include selectable-text PDFs and text/code files.
-- Qwen2.5-Coder 3B is text-only; image and video understanding are not included.
-- Scanned-PDF OCR is not included.
+Describe an automation in Bangla or English. The local Qwen model generates n8n workflow JSON, checks basic node names and connection references, and lets you copy or export the JSON for import into your own n8n instance. Workflow JSON is generated and validated but is not executed or monitored by NexaAI.
 
 ## Privacy
 
-- Chat prompts, replies, history and supported attachments stay on this PC.
-- No messages or files are sent to a cloud AI provider.
-- The bundled Ollama service is bound to the local loopback interface and uses a private app-specific port.
-- Existing local chat history and the downloaded model cache are retained during upgrades.
+- Local-only mode keeps chat prompts and responses on this PC.
+- Hybrid local-first mode sends a prompt to Hugging Face only if the local model fails and a token is configured.
+- Cloud-first mode sends prompts, recent conversation context and text extracted from attachments to Hugging Face Inference Providers.
+- The Hugging Face access token is encrypted with Windows DPAPI and is not written to logs.
+- The local Ollama service listens only on `127.0.0.1:11439`; NexaAI's private chat API listens on `127.0.0.1:8000`.
+- Existing local chat history and compatible model cache are retained during upgrades.
 
 ## Build from source
 
-The GitHub Actions workflow **Build Nexa AI 2.1.3 Windows Offline Qwen 3B Installer** downloads and verifies the official Ollama Windows standalone runtime, obtains the official Qwen Research License and attribution notice, runs the unit tests, compiles the desktop app and produces one Windows x64 installer.
+GitHub Actions workflow **Build Nexa AI 2.2.0 Windows Hybrid Qwen 1.5B Installer** verifies the official Ollama standalone runtime, downloads the Qwen Apache 2.0 license, runs unit tests and produces a Windows x64 installer.
 
 Run the optional local runtime smoke test after NexaAI has started its bundled Ollama service:
 
     python tools/smoke_test_runtime.py
 
-See `THIRD-PARTY-NOTICES.txt` and `licenses/QWEN-RESEARCH-LICENSE.txt` for third-party software and model license information.
+See `THIRD-PARTY-NOTICES.txt` and `licenses/APACHE-2.0.txt` for third-party software and license details.
